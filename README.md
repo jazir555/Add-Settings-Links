@@ -16,4 +16,4 @@ For plugins that create submenu items under tools or users or unconventional loc
 
 **Planned Features**
 
-Adding a button to edit the link to set a custom slug for each plugin's settings page that appears when the mouse is hovered over the settings link. That way if the plugin fails to identify the correct url, it can be set manually.
+Add a button to edit the link, allowing users to set a custom slug for each plugin's settings page. This button should appear when the mouse hovers over the settings link. This feature enables the ability to manually set the URL in case the plugin fails to identify the correct slug.
