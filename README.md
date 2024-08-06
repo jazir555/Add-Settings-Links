@@ -4,7 +4,7 @@ A wordpress plugin which adds direct links to the plugins admin page for plugins
 
 **Partially Working Functionality**
 
-Plugins that create top level menu items on the sidebar, and submenu items under "settings" have the correct settings page urls added to the plugins.php page.
+Plugins that create top level menu items on the sidebar, and submenu items under "settings" have the correct settings page urls added to plugins.php.
 
 --------------------------------
 
