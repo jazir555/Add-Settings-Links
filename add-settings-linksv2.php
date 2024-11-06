@@ -66,6 +66,7 @@ function asl_cache_admin_menu_slugs() {
                 'url'    => $url,
                 'parent' => $parent,
             );
+            asl_log_debug("Caching top-level slug: $slug with URL: $url");
         }
     }
 
@@ -80,6 +81,7 @@ function asl_cache_admin_menu_slugs() {
                     'url'    => $url,
                     'parent' => $parent_slug,
                 );
+                asl_log_debug("Caching submenu slug: $slug with URL: $url under parent: $parent_slug");
             }
         }
     }
@@ -106,14 +108,14 @@ function asl_construct_menu_url($slug, $parent_slug = '') {
         if (strpos($slug, '.php') !== false) {
             return admin_url($slug);
         } else {
-            return admin_url('admin.php?page=' . $slug);
+            return add_query_arg('page', $slug, admin_url('admin.php'));
         }
     } else {
         // Submenu item
         if (strpos($parent_slug, '.php') !== false) {
-            return admin_url($parent_slug . '?page=' . $slug);
+            return add_query_arg('page', $slug, admin_url($parent_slug));
         } else {
-            return admin_url('admin.php?page=' . $slug);
+            return add_query_arg('page', $slug, admin_url('admin.php'));
         }
     }
 }
@@ -134,20 +136,27 @@ function asl_add_missing_settings_links($links, $file) {
         }
     }
 
+    $settings_added = false; // Flag to track if any settings link was added
+
     // Check for manual overrides
     $manual_overrides = get_option('asl_manual_overrides', array());
-    if (isset($manual_overrides[$file])) {
-        $settings_urls = $manual_overrides[$file];
-        if (!empty($settings_urls)) {
-            foreach ($settings_urls as $settings_url) {
-                if (!empty($settings_url)) {
-                    $settings_link = '<a href="' . esc_url($settings_url) . '">' . esc_html__('Settings', 'add-settings-links') . '</a>';
-                    array_unshift($links, $settings_link);
-                    // If multiple settings pages, add multiple links
+    if (isset($manual_overrides[$file]) && !empty($manual_overrides[$file])) {
+        foreach ($manual_overrides[$file] as $settings_url) {
+            if (!empty($settings_url)) {
+                // Ensure the URL is a relative admin URL or a full URL
+                if (strpos($settings_url, 'http') !== 0) {
+                    $settings_url = admin_url($settings_url);
                 }
+                $settings_link = '<a href="' . esc_url($settings_url) . '">' . esc_html__('Settings', 'add-settings-links') . '</a>';
+                array_unshift($links, $settings_link);
+                $settings_added = true;
             }
-            return $links;
         }
+    }
+
+    // If settings links were added via manual overrides, return early
+    if ($settings_added) {
+        return $links;
     }
 
     // Determine the plugin directory
@@ -165,17 +174,19 @@ function asl_add_missing_settings_links($links, $file) {
 
         foreach ($settings_urls as $settings_url) {
             if (!empty($settings_url)) {
-                $settings_link = '<a href="' . esc_url(admin_url($settings_url)) . '">' . esc_html__('Settings', 'add-settings-links') . '</a>';
+                // Construct the full admin URL
+                $full_url = (strpos($settings_url, 'http') === 0) ? $settings_url : admin_url($settings_url);
+                $settings_link = '<a href="' . esc_url($full_url) . '">' . esc_html__('Settings', 'add-settings-links') . '</a>';
                 array_unshift($links, $settings_link);
+                $settings_added = true;
             }
         }
-    } else {
-        // Optionally log if settings URL not found
+    }
+
+    // If no settings link was added, consider logging or aggregating notices
+    if (!$settings_added) {
+        // Log the missing settings URL
         asl_log_debug("Settings URL not found for plugin: $plugin_basename");
-        // Display admin notice
-        add_action('admin_notices', function() use ($plugin_basename) {
-            asl_admin_notice_no_settings($plugin_basename);
-        });
     }
 
     return $links;
@@ -231,14 +242,21 @@ function asl_find_settings_url($plugin_dir, $plugin_basename) {
  */
 function asl_generate_potential_slugs($plugin_dir, $plugin_basename) {
     $basename = basename($plugin_basename, '.php');
-    return array_unique(array_map('sanitize_title', array(
+    $variations = array(
         $plugin_dir,
         $basename,
         str_replace('-', '_', $plugin_dir),
         str_replace('_', '-', $plugin_dir),
         str_replace('-', '_', $basename),
         str_replace('_', '-', $basename),
-    )));
+        strtolower($basename),
+        strtolower($plugin_dir),
+        ucwords($basename),
+        ucwords($plugin_dir),
+        // Add more variations if necessary
+    );
+
+    return array_unique(array_map('sanitize_title', $variations));
 }
 
 /**
@@ -404,6 +422,9 @@ function asl_get_all_plugins() {
         }
         $cached_plugins = get_plugins();
         set_transient('asl_cached_plugins', $cached_plugins, DAY_IN_SECONDS);
+        asl_log_debug("Installed plugins cached.");
+    } else {
+        asl_log_debug("Installed plugins retrieved from cache.");
     }
 
     return $cached_plugins;
