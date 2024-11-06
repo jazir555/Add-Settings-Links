@@ -442,11 +442,6 @@ function asl_manual_overrides_field_callback() {
  * @return array       The sanitized input.
  */
 function asl_sanitize_manual_overrides($input) {
-    // Verify nonce for security
-    if (!isset($_POST['asl_nonce']) || !wp_verify_nonce($_POST['asl_nonce'], 'asl_save_settings')) {
-        return array(); // Return empty array or handle error as needed
-    }
-
     $sanitized = array();
 
     if (is_array($input)) {
