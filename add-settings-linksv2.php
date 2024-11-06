@@ -2,8 +2,10 @@
 /*
 Plugin Name: Add Settings Links
 Description: Adds direct links to the settings pages for all plugins that do not have one.
-Version: 1.2
+Version: 1.4.1
 Author: Jaz
+Text Domain: add-settings-links
+Domain Path: /languages
 */
 
 if (!defined('ABSPATH')) {
@@ -14,11 +16,31 @@ if (!defined('ABSPATH')) {
 define('ASL_MENU_SLUGS_TRANSIENT', 'cached_admin_menu_slugs');
 define('ASL_MENU_SLUGS_TRANSIENT_EXPIRATION', 12 * HOUR_IN_SECONDS);
 
+// Hook into plugins_loaded to load the text domain
+add_action('plugins_loaded', 'asl_load_textdomain');
+
+/**
+ * Load the plugin text domain for translation.
+ */
+function asl_load_textdomain() {
+    load_plugin_textdomain('add-settings-links', false, dirname(plugin_basename(__FILE__)) . '/languages');
+}
+
 // Hook into admin_menu to cache menu slugs
 add_action('admin_menu', 'asl_cache_admin_menu_slugs', 9999);
 
 // Hook into plugin_action_links to add settings links
 add_filter('plugin_action_links', 'asl_add_missing_settings_links', 10, 2);
+
+// Hook into plugin activation/deactivation for cache invalidation
+add_action('activated_plugin', 'asl_clear_cached_menu_slugs');
+add_action('deactivated_plugin', 'asl_clear_cached_menu_slugs');
+
+// Hook into admin_init to register settings for manual overrides
+add_action('admin_init', 'asl_register_settings');
+
+// Hook into admin_menu to add settings page
+add_action('admin_menu', 'asl_add_settings_page');
 
 /**
  * Cache all admin menu slugs and their corresponding URLs.
@@ -26,6 +48,7 @@ add_filter('plugin_action_links', 'asl_add_missing_settings_links', 10, 2);
 function asl_cache_admin_menu_slugs() {
     // Check if the slugs are already cached
     if (false !== get_transient(ASL_MENU_SLUGS_TRANSIENT)) {
+        asl_log_debug("Menu slugs are already cached.");
         return;
     }
 
@@ -61,8 +84,13 @@ function asl_cache_admin_menu_slugs() {
         }
     }
 
-    // Cache the slugs using a transient
-    set_transient(ASL_MENU_SLUGS_TRANSIENT, $all_slugs, ASL_MENU_SLUGS_TRANSIENT_EXPIRATION);
+    // Cache the slugs using a transient (per site in multisite)
+    if (!empty($all_slugs)) {
+        set_transient(ASL_MENU_SLUGS_TRANSIENT, $all_slugs, ASL_MENU_SLUGS_TRANSIENT_EXPIRATION);
+        asl_log_debug("Menu slugs cached successfully.");
+    } else {
+        asl_log_debug("No menu slugs found to cache.");
+    }
 }
 
 /**
@@ -107,12 +135,17 @@ function asl_add_missing_settings_links($links, $file) {
     }
 
     // Check for manual overrides
-    $manual_overrides = apply_filters('asl_manual_settings_links', array());
+    $manual_overrides = get_option('asl_manual_overrides', array());
     if (isset($manual_overrides[$file])) {
-        $settings_url = $manual_overrides[$file];
-        if (!empty($settings_url)) {
-            $settings_link = '<a href="' . esc_url($settings_url) . '">' . __('Settings') . '</a>';
-            array_unshift($links, $settings_link);
+        $settings_urls = $manual_overrides[$file];
+        if (!empty($settings_urls)) {
+            foreach ($settings_urls as $settings_url) {
+                if (!empty($settings_url)) {
+                    $settings_link = '<a href="' . esc_url($settings_url) . '">' . esc_html__('Settings', 'add-settings-links') . '</a>';
+                    array_unshift($links, $settings_link);
+                    // If multiple settings pages, add multiple links
+                }
+            }
             return $links;
         }
     }
@@ -121,27 +154,39 @@ function asl_add_missing_settings_links($links, $file) {
     $plugin_basename = plugin_basename($file);
     $plugin_dir      = dirname($plugin_basename);
 
-    // Attempt to find the settings URL
-    $settings_url = asl_find_settings_url($plugin_dir, $plugin_basename);
+    // Attempt to find the settings URLs
+    $settings_urls = asl_find_settings_url($plugin_dir, $plugin_basename);
 
-    if ($settings_url) {
-        // Prepend the Settings link
-        $settings_link = '<a href="' . esc_url(admin_url($settings_url)) . '">' . __('Settings') . '</a>';
-        array_unshift($links, $settings_link);
+    if ($settings_urls) {
+        // Ensure $settings_urls is an array
+        if (!is_array($settings_urls)) {
+            $settings_urls = array($settings_urls);
+        }
+
+        foreach ($settings_urls as $settings_url) {
+            if (!empty($settings_url)) {
+                $settings_link = '<a href="' . esc_url(admin_url($settings_url)) . '">' . esc_html__('Settings', 'add-settings-links') . '</a>';
+                array_unshift($links, $settings_link);
+            }
+        }
     } else {
         // Optionally log if settings URL not found
         asl_log_debug("Settings URL not found for plugin: $plugin_basename");
+        // Display admin notice
+        add_action('admin_notices', function() use ($plugin_basename) {
+            asl_admin_notice_no_settings($plugin_basename);
+        });
     }
 
     return $links;
 }
 
 /**
- * Find the settings URL for a given plugin directory and file.
+ * Find the settings URLs for a given plugin directory and file.
  *
  * @param string $plugin_dir       The plugin directory name.
  * @param string $plugin_basename  The plugin basename (e.g., my-plugin/my-plugin.php).
- * @return string|false            The settings URL or false if not found.
+ * @return array|false             Array of settings URLs or false if not found.
  */
 function asl_find_settings_url($plugin_dir, $plugin_basename) {
     $cached_slugs = get_transient(ASL_MENU_SLUGS_TRANSIENT);
@@ -159,11 +204,18 @@ function asl_find_settings_url($plugin_dir, $plugin_basename) {
     // Generate potential slugs based on plugin directory and basename
     $potential_slugs = asl_generate_potential_slugs($plugin_dir, $plugin_basename);
 
+    $found_urls = array();
+
     foreach ($cached_slugs as $item) {
         if (in_array($item['slug'], $potential_slugs, true)) {
             asl_log_debug("Found settings URL for plugin '$plugin_basename': " . $item['url']);
-            return $item['url'];
+            $found_urls[] = $item['url'];
         }
+    }
+
+    if (!empty($found_urls)) {
+        // Return unique URLs to handle multiple settings pages
+        return array_unique($found_urls);
     }
 
     asl_log_debug("No matching settings URL found for plugin '$plugin_basename'.");
@@ -191,15 +243,137 @@ function asl_generate_potential_slugs($plugin_dir, $plugin_basename) {
 
 /**
  * Clear the cached menu slugs when necessary.
- * Hook this function to actions like plugin activation/deactivation if needed.
+ * Hooked to plugin activation, deactivation, and other relevant actions.
  */
 function asl_clear_cached_menu_slugs() {
     delete_transient(ASL_MENU_SLUGS_TRANSIENT);
+    // Also clear cached plugins to ensure fresh data
+    delete_transient('asl_cached_plugins');
 }
 
-// Clear cache on plugin activation and deactivation
+// Hook into activation and deactivation
 register_activation_hook(__FILE__, 'asl_clear_cached_menu_slugs');
 register_deactivation_hook(__FILE__, 'asl_clear_cached_menu_slugs');
+
+/**
+ * Register settings for manual overrides.
+ */
+function asl_register_settings() {
+    register_setting('asl_settings_group', 'asl_manual_overrides', 'asl_sanitize_manual_overrides');
+
+    add_settings_section(
+        'asl_settings_section',
+        __('Manual Settings Overrides', 'add-settings-links'),
+        'asl_settings_section_callback',
+        'asl_settings'
+    );
+
+    add_settings_field(
+        'asl_manual_overrides_field',
+        __('Manual Overrides', 'add-settings-links'),
+        'asl_manual_overrides_field_callback',
+        'asl_settings',
+        'asl_settings_section'
+    );
+}
+
+/**
+ * Settings section callback.
+ */
+function asl_settings_section_callback() {
+    echo '<p>' . esc_html__('Specify manual settings URLs for plugins that have multiple settings pages or unconventional menu structures.', 'add-settings-links') . '</p>';
+}
+
+/**
+ * Settings field callback.
+ */
+function asl_manual_overrides_field_callback() {
+    $manual_overrides = get_option('asl_manual_overrides', array());
+
+    // Fetch all installed plugins with caching
+    $plugins = asl_get_all_plugins();
+    ?>
+    <table class="widefat fixed" cellspacing="0">
+        <thead>
+            <tr>
+                <th><?php esc_html_e('Plugin', 'add-settings-links'); ?></th>
+                <th><?php esc_html_e('Manual Settings URLs (comma-separated for multiple)', 'add-settings-links'); ?></th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($plugins as $plugin_file => $plugin_data) : ?>
+                <tr>
+                    <td><?php echo esc_html($plugin_data['Name']); ?></td>
+                    <td>
+                        <input type="text" name="asl_manual_overrides[<?php echo esc_attr($plugin_file); ?>]" value="<?php echo isset($manual_overrides[$plugin_file]) ? esc_attr(implode(',', (array)$manual_overrides[$plugin_file])) : ''; ?>" style="width:100%;" />
+                        <p class="description"><?php esc_html_e('Enter one or multiple settings URLs separated by commas.', 'add-settings-links'); ?></p>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+    <?php
+}
+
+/**
+ * Sanitize manual overrides input.
+ *
+ * @param array $input The raw input.
+ * @return array       The sanitized input.
+ */
+function asl_sanitize_manual_overrides($input) {
+    $sanitized = array();
+
+    if (is_array($input)) {
+        foreach ($input as $plugin_file => $urls) {
+            $urls = array_map('trim', explode(',', $urls));
+            // Validate each URL
+            $valid_urls = array();
+            foreach ($urls as $url) {
+                $url = esc_url_raw($url);
+                if (!empty($url) && filter_var($url, FILTER_VALIDATE_URL)) {
+                    $valid_urls[] = $url;
+                }
+            }
+            if (!empty($valid_urls)) {
+                $sanitized[$plugin_file] = $valid_urls;
+            }
+        }
+    }
+
+    return $sanitized;
+}
+
+/**
+ * Add settings page to the admin menu.
+ */
+function asl_add_settings_page() {
+    add_options_page(
+        __('Add Settings Links', 'add-settings-links'),
+        __('Add Settings Links', 'add-settings-links'),
+        'manage_options',
+        'asl_settings',
+        'asl_render_settings_page'
+    );
+}
+
+/**
+ * Render the settings page.
+ */
+function asl_render_settings_page() {
+    ?>
+    <div class="wrap">
+        <h1><?php esc_html_e('Add Settings Links', 'add-settings-links'); ?></h1>
+        <form method="post" action="options.php">
+            <?php
+            settings_fields('asl_settings_group');
+            do_settings_sections('asl_settings');
+            submit_button();
+            ?>
+        </form>
+    </div>
+    <?php
+}
 
 /**
  * Log debug messages if WP_DEBUG is enabled.
@@ -208,6 +382,49 @@ register_deactivation_hook(__FILE__, 'asl_clear_cached_menu_slugs');
  */
 function asl_log_debug($message) {
     if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
-        error_log('[Add Settings Links] ' . $message);
+        if (is_multisite()) {
+            error_log('[Add Settings Links][Site ID ' . get_current_blog_id() . '] ' . $message);
+        } else {
+            error_log('[Add Settings Links] ' . $message);
+        }
     }
+}
+
+/**
+ * Get all installed plugins with caching.
+ *
+ * @return array Array of installed plugins.
+ */
+function asl_get_all_plugins() {
+    $cached_plugins = get_transient('asl_cached_plugins');
+
+    if (false === $cached_plugins) {
+        if (!function_exists('get_plugins')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+        $cached_plugins = get_plugins();
+        set_transient('asl_cached_plugins', $cached_plugins, DAY_IN_SECONDS);
+    }
+
+    return $cached_plugins;
+}
+
+/**
+ * Display an admin notice if no settings URL is found for a plugin.
+ *
+ * @param string $plugin_basename The plugin basename.
+ */
+function asl_admin_notice_no_settings($plugin_basename) {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
+    $class = 'notice notice-warning is-dismissible';
+    $message = sprintf(
+        /* translators: %s: Plugin basename */
+        __('Add Settings Links: No settings URL found for plugin %s.', 'add-settings-links'),
+        esc_html($plugin_basename)
+    );
+
+    printf('<div class="%1$s"><p>%2$s</p></div>', esc_attr($class), esc_html($message));
 }
