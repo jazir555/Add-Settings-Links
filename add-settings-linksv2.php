@@ -2,7 +2,7 @@
 /*
 Plugin Name: Add Settings Links
 Description: Adds direct links to the settings pages for all plugins that do not have one.
-Version: 1.4.1
+Version: 1.5.0
 Author: Jaz
 Text Domain: add-settings-links
 Domain Path: /languages
@@ -15,6 +15,14 @@ if (!defined('ABSPATH')) {
 // Define constants for transient caching
 define('ASL_MENU_SLUGS_TRANSIENT', 'cached_admin_menu_slugs');
 define('ASL_MENU_SLUGS_TRANSIENT_EXPIRATION', 12 * HOUR_IN_SECONDS);
+
+// Define constants for cached plugins
+define('ASL_CACHED_PLUGINS_TRANSIENT', 'asl_cached_plugins');
+define('ASL_CACHED_PLUGINS_EXPIRATION', DAY_IN_SECONDS);
+
+// Initialize global variable for missing settings
+global $asl_missing_settings;
+$asl_missing_settings = array();
 
 // Hook into plugins_loaded to load the text domain
 add_action('plugins_loaded', 'asl_load_textdomain');
@@ -35,6 +43,9 @@ add_filter('plugin_action_links', 'asl_add_missing_settings_links', 10, 2);
 // Hook into plugin activation/deactivation for cache invalidation
 add_action('activated_plugin', 'asl_clear_cached_menu_slugs');
 add_action('deactivated_plugin', 'asl_clear_cached_menu_slugs');
+
+// Hook into upgrader_process_complete for dynamic cache invalidation
+add_action('upgrader_process_complete', 'asl_dynamic_cache_invalidation', 10, 2);
 
 // Hook into admin_init to register settings for manual overrides
 add_action('admin_init', 'asl_register_settings');
@@ -128,6 +139,8 @@ function asl_construct_menu_url($slug, $parent_slug = '') {
  * @return array         Modified array of action links.
  */
 function asl_add_missing_settings_links($links, $file) {
+    global $asl_missing_settings;
+
     // Check if a settings link already exists
     foreach ($links as $link) {
         // Use case-insensitive exact match for 'Settings'
@@ -183,8 +196,10 @@ function asl_add_missing_settings_links($links, $file) {
         }
     }
 
-    // If no settings link was added, consider logging or aggregating notices
+    // If no settings link was added, aggregate the missing plugin
     if (!$settings_added) {
+        // Add the plugin basename to the global missing settings array
+        $asl_missing_settings[] = $plugin_basename;
         // Log the missing settings URL
         asl_log_debug("Settings URL not found for plugin: $plugin_basename");
     }
@@ -253,7 +268,10 @@ function asl_generate_potential_slugs($plugin_dir, $plugin_basename) {
         strtolower($plugin_dir),
         ucwords($basename),
         ucwords($plugin_dir),
-        // Add more variations if necessary
+        // Additional variations
+        'settings', // Commonly used slug
+        "{$plugin_dir}_settings",
+        "{$basename}_settings",
     );
 
     return array_unique(array_map('sanitize_title', $variations));
@@ -266,7 +284,19 @@ function asl_generate_potential_slugs($plugin_dir, $plugin_basename) {
 function asl_clear_cached_menu_slugs() {
     delete_transient(ASL_MENU_SLUGS_TRANSIENT);
     // Also clear cached plugins to ensure fresh data
-    delete_transient('asl_cached_plugins');
+    delete_transient(ASL_CACHED_PLUGINS_TRANSIENT);
+}
+
+/**
+ * Dynamically invalidate cache upon plugin updates or installations.
+ *
+ * @param bool   $update          Whether this is an update.
+ * @param array  $args            Array of bulk update arguments.
+ */
+function asl_dynamic_cache_invalidation($update, $args) {
+    if (in_array($args['type'], array('plugin', 'theme'), true)) {
+        asl_clear_cached_menu_slugs();
+    }
 }
 
 // Hook into activation and deactivation
@@ -311,7 +341,8 @@ function asl_manual_overrides_field_callback() {
     // Fetch all installed plugins with caching
     $plugins = asl_get_all_plugins();
     ?>
-    <table class="widefat fixed" cellspacing="0">
+    <input type="text" id="asl_plugin_search" placeholder="<?php esc_attr_e('Search Plugins...', 'add-settings-links'); ?>" style="width:100%; margin-bottom: 10px;" />
+    <table class="widefat fixed asl-settings-table" cellspacing="0">
         <thead>
             <tr>
                 <th><?php esc_html_e('Plugin', 'add-settings-links'); ?></th>
@@ -330,6 +361,32 @@ function asl_manual_overrides_field_callback() {
             <?php endforeach; ?>
         </tbody>
     </table>
+    <style>
+        /* Optional: Add some basic styling for better UX */
+        .asl-settings-table tbody tr:hover {
+            background-color: #f1f1f1;
+        }
+    </style>
+    <script>
+        // JavaScript for real-time search/filter on the settings page
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.getElementById('asl_plugin_search');
+            const tableRows = document.querySelectorAll('.asl-settings-table tbody tr');
+
+            searchInput.addEventListener('keyup', function() {
+                const query = this.value.toLowerCase();
+
+                tableRows.forEach(function(row) {
+                    const pluginName = row.querySelector('td:first-child').textContent.toLowerCase();
+                    if (pluginName.includes(query)) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            });
+        });
+    </script>
     <?php
 }
 
@@ -414,14 +471,14 @@ function asl_log_debug($message) {
  * @return array Array of installed plugins.
  */
 function asl_get_all_plugins() {
-    $cached_plugins = get_transient('asl_cached_plugins');
+    $cached_plugins = get_transient(ASL_CACHED_PLUGINS_TRANSIENT);
 
     if (false === $cached_plugins) {
         if (!function_exists('get_plugins')) {
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
         }
         $cached_plugins = get_plugins();
-        set_transient('asl_cached_plugins', $cached_plugins, DAY_IN_SECONDS);
+        set_transient(ASL_CACHED_PLUGINS_TRANSIENT, $cached_plugins, ASL_CACHED_PLUGINS_EXPIRATION);
         asl_log_debug("Installed plugins cached.");
     } else {
         asl_log_debug("Installed plugins retrieved from cache.");
@@ -431,21 +488,26 @@ function asl_get_all_plugins() {
 }
 
 /**
- * Display an admin notice if no settings URL is found for a plugin.
- *
- * @param string $plugin_basename The plugin basename.
+ * Display an aggregated admin notice if no settings URL is found for any plugins.
  */
-function asl_admin_notice_no_settings($plugin_basename) {
-    if (!current_user_can('manage_options')) {
-        return;
+function asl_display_aggregated_admin_notices() {
+    global $asl_missing_settings;
+
+    if (!empty($asl_missing_settings)) {
+        $class = 'notice notice-warning is-dismissible';
+        $plugins = implode(', ', array_map('esc_html', $asl_missing_settings));
+        $message = sprintf(
+            /* translators: %s: List of plugin basenames */
+            __('Add Settings Links: No settings URL found for the following plugins: %s.', 'add-settings-links'),
+            $plugins
+        );
+
+        printf('<div class="%1$s"><p>%2$s</p></div>', esc_attr($class), esc_html($message));
+
+        // Reset the global variable after displaying the notice
+        $asl_missing_settings = array();
     }
-
-    $class = 'notice notice-warning is-dismissible';
-    $message = sprintf(
-        /* translators: %s: Plugin basename */
-        __('Add Settings Links: No settings URL found for plugin %s.', 'add-settings-links'),
-        esc_html($plugin_basename)
-    );
-
-    printf('<div class="%1$s"><p>%2$s</p></div>', esc_attr($class), esc_html($message));
 }
+
+// Hook into admin_notices to display aggregated notices
+add_action('admin_notices', 'asl_display_aggregated_admin_notices');
