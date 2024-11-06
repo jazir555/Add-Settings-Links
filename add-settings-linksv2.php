@@ -2,7 +2,7 @@
 /*
 Plugin Name: Add Settings Links
 Description: Adds direct links to the settings pages for all plugins that do not have one.
-Version: 1.5.0
+Version: 1.6.0
 Author: Jaz
 Text Domain: add-settings-links
 Domain Path: /languages
@@ -354,8 +354,9 @@ function asl_manual_overrides_field_callback() {
                 <tr>
                     <td><?php echo esc_html($plugin_data['Name']); ?></td>
                     <td>
-                        <input type="text" name="asl_manual_overrides[<?php echo esc_attr($plugin_file); ?>]" value="<?php echo isset($manual_overrides[$plugin_file]) ? esc_attr(implode(',', (array)$manual_overrides[$plugin_file])) : ''; ?>" style="width:100%;" />
-                        <p class="description"><?php esc_html_e('Enter one or multiple settings URLs separated by commas.', 'add-settings-links'); ?></p>
+                        <input type="text" name="asl_manual_overrides[<?php echo esc_attr($plugin_file); ?>]" value="<?php echo isset($manual_overrides[$plugin_file]) ? esc_attr(implode(',', (array)$manual_overrides[$plugin_file])) : ''; ?>" style="width:100%;" aria-describedby="asl_manual_overrides_description_<?php echo esc_attr($plugin_file); ?>" />
+                        <p class="description" id="asl_manual_overrides_description_<?php echo esc_attr($plugin_file); ?>"><?php esc_html_e('Enter one or multiple settings URLs separated by commas.', 'add-settings-links'); ?></p>
+                        <span class="asl-error-message" style="color: red; display: none;"></span>
                     </td>
                 </tr>
             <?php endforeach; ?>
@@ -365,6 +366,9 @@ function asl_manual_overrides_field_callback() {
         /* Optional: Add some basic styling for better UX */
         .asl-settings-table tbody tr:hover {
             background-color: #f1f1f1;
+        }
+        .asl-error-message {
+            font-size: 0.9em;
         }
     </style>
     <script>
@@ -406,8 +410,23 @@ function asl_manual_overrides_field_callback() {
                         }
                     });
 
+                    const errorMessage = this.parentNode.querySelector('.asl-error-message');
+
                     if (!allValid) {
-                        alert('<?php echo esc_js( __('One or more URLs entered are invalid. Please ensure they are correctly formatted.', 'add-settings-links') ); ?>');
+                        // Highlight the input field
+                        this.style.borderColor = 'red';
+                        // Display an inline error message
+                        if (errorMessage) {
+                            errorMessage.textContent = '<?php echo esc_js( __('One or more URLs entered are invalid. Please ensure they are correctly formatted.', 'add-settings-links') ); ?>';
+                            errorMessage.style.display = 'block';
+                        }
+                    } else {
+                        // Remove highlight and error message if valid
+                        this.style.borderColor = '';
+                        if (errorMessage) {
+                            errorMessage.textContent = '';
+                            errorMessage.style.display = 'none';
+                        }
                     }
                 });
             });
@@ -423,6 +442,11 @@ function asl_manual_overrides_field_callback() {
  * @return array       The sanitized input.
  */
 function asl_sanitize_manual_overrides($input) {
+    // Verify nonce for security
+    if (!isset($_POST['asl_nonce']) || !wp_verify_nonce($_POST['asl_nonce'], 'asl_save_settings')) {
+        return array(); // Return empty array or handle error as needed
+    }
+
     $sanitized = array();
 
     if (is_array($input)) {
