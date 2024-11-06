@@ -8,7 +8,7 @@ Plugins that create top level menu items on the sidebar, and submenu items under
 
 --------------------------------
 
-Edit: **I believe the issue mentioned below should be fixed in v2, please let me know in an issue if you're having problems, and I will try to implement a fix!**
+Edit: **I believe the issue mentioned below should be fixed in v2, please let me know in a github issue if you're having problems, and I will try to implement a fix!**
 
 **Known bugs** 
 
