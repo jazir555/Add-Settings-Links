@@ -2,7 +2,7 @@
 
 A wordpress plugin which adds direct links to the plugins admin page for plugins that do not have direct links to their settings panel listed on the plugins page
 
-Edit: **I believe the issues mentioned below should be fixed in v2, please let me know in an issue if you're having problems, and I will try to implement a fix!
+Edit: **I believe the issues mentioned below should be fixed in v2, please let me know in an issue if you're having problems, and I will try to implement a fix!**
 
 **Partially Working Functionality**
 
