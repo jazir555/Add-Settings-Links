@@ -2,7 +2,7 @@
 /*
 Plugin Name: Add Settings Links
 Description: Adds direct links to the settings pages for all plugins that do not have one.
-Version: 1.1
+Version: 1.2
 Author: Jaz
 */
 
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-// Use a transient to cache menu slugs for 12 hours
+// Define constants for transient caching
 define('ASL_MENU_SLUGS_TRANSIENT', 'cached_admin_menu_slugs');
 define('ASL_MENU_SLUGS_TRANSIENT_EXPIRATION', 12 * HOUR_IN_SECONDS);
 
@@ -39,8 +39,8 @@ function asl_cache_admin_menu_slugs() {
             $parent = isset($item[0]) ? $item[0] : '';
             $url = asl_construct_menu_url($slug);
             $all_slugs[] = array(
-                'slug' => $slug,
-                'url' => $url,
+                'slug'   => $slug,
+                'url'    => $url,
                 'parent' => $parent,
             );
         }
@@ -51,10 +51,10 @@ function asl_cache_admin_menu_slugs() {
         foreach ($items as $item) {
             if (!empty($item[2])) {
                 $slug = $item[2];
-                $url = asl_construct_menu_url($slug, $parent_slug);
+                $url  = asl_construct_menu_url($slug, $parent_slug);
                 $all_slugs[] = array(
-                    'slug' => $slug,
-                    'url' => $url,
+                    'slug'   => $slug,
+                    'url'    => $url,
                     'parent' => $parent_slug,
                 );
             }
@@ -68,24 +68,24 @@ function asl_cache_admin_menu_slugs() {
 /**
  * Construct the full admin URL for a given slug and parent.
  *
- * @param string $slug The menu slug.
- * @param string $parent_slug The parent menu slug.
- * @return string The constructed URL.
+ * @param string $slug         The menu slug.
+ * @param string $parent_slug  The parent menu slug (optional).
+ * @return string              The constructed URL.
  */
 function asl_construct_menu_url($slug, $parent_slug = '') {
     if (empty($parent_slug)) {
         // Top-level menu
         if (strpos($slug, '.php') !== false) {
-            return $slug;
+            return admin_url($slug);
         } else {
-            return 'admin.php?page=' . $slug;
+            return admin_url('admin.php?page=' . $slug);
         }
     } else {
         // Submenu item
         if (strpos($parent_slug, '.php') !== false) {
-            return $parent_slug . '?page=' . $slug;
+            return admin_url($parent_slug . '?page=' . $slug);
         } else {
-            return 'admin.php?page=' . $slug;
+            return admin_url('admin.php?page=' . $slug);
         }
     }
 }
@@ -93,9 +93,9 @@ function asl_construct_menu_url($slug, $parent_slug = '') {
 /**
  * Add missing settings links to plugin action links.
  *
- * @param array  $links Array of existing action links.
- * @param string $file  Plugin file path.
- * @return array Modified array of action links.
+ * @param array  $links  Array of existing action links.
+ * @param string $file   Plugin file path.
+ * @return array         Modified array of action links.
  */
 function asl_add_missing_settings_links($links, $file) {
     // Check if a settings link already exists
@@ -106,9 +106,20 @@ function asl_add_missing_settings_links($links, $file) {
         }
     }
 
+    // Check for manual overrides
+    $manual_overrides = apply_filters('asl_manual_settings_links', array());
+    if (isset($manual_overrides[$file])) {
+        $settings_url = $manual_overrides[$file];
+        if (!empty($settings_url)) {
+            $settings_link = '<a href="' . esc_url($settings_url) . '">' . __('Settings') . '</a>';
+            array_unshift($links, $settings_link);
+            return $links;
+        }
+    }
+
     // Determine the plugin directory
     $plugin_basename = plugin_basename($file);
-    $plugin_dir = dirname($plugin_basename);
+    $plugin_dir      = dirname($plugin_basename);
 
     // Attempt to find the settings URL
     $settings_url = asl_find_settings_url($plugin_dir, $plugin_basename);
@@ -117,6 +128,9 @@ function asl_add_missing_settings_links($links, $file) {
         // Prepend the Settings link
         $settings_link = '<a href="' . esc_url(admin_url($settings_url)) . '">' . __('Settings') . '</a>';
         array_unshift($links, $settings_link);
+    } else {
+        // Optionally log if settings URL not found
+        asl_log_debug("Settings URL not found for plugin: $plugin_basename");
     }
 
     return $links;
@@ -125,9 +139,9 @@ function asl_add_missing_settings_links($links, $file) {
 /**
  * Find the settings URL for a given plugin directory and file.
  *
- * @param string $plugin_dir      The plugin directory name.
- * @param string $plugin_basename The plugin basename (e.g., my-plugin/my-plugin.php).
- * @return string|false The settings URL or false if not found.
+ * @param string $plugin_dir       The plugin directory name.
+ * @param string $plugin_basename  The plugin basename (e.g., my-plugin/my-plugin.php).
+ * @return string|false            The settings URL or false if not found.
  */
 function asl_find_settings_url($plugin_dir, $plugin_basename) {
     $cached_slugs = get_transient(ASL_MENU_SLUGS_TRANSIENT);
@@ -138,6 +152,7 @@ function asl_find_settings_url($plugin_dir, $plugin_basename) {
     }
 
     if (empty($cached_slugs)) {
+        asl_log_debug("Cached slugs are empty after caching attempt.");
         return false; // Unable to retrieve menu slugs
     }
 
@@ -146,19 +161,21 @@ function asl_find_settings_url($plugin_dir, $plugin_basename) {
 
     foreach ($cached_slugs as $item) {
         if (in_array($item['slug'], $potential_slugs, true)) {
+            asl_log_debug("Found settings URL for plugin '$plugin_basename': " . $item['url']);
             return $item['url'];
         }
     }
 
+    asl_log_debug("No matching settings URL found for plugin '$plugin_basename'.");
     return false;
 }
 
 /**
  * Generate a list of potential slugs based on plugin directory and basename.
  *
- * @param string $plugin_dir      The plugin directory name.
- * @param string $plugin_basename The plugin basename.
- * @return array Array of potential slugs.
+ * @param string $plugin_dir       The plugin directory name.
+ * @param string $plugin_basename  The plugin basename.
+ * @return array                   Array of potential slugs.
  */
 function asl_generate_potential_slugs($plugin_dir, $plugin_basename) {
     $basename = basename($plugin_basename, '.php');
@@ -174,12 +191,23 @@ function asl_generate_potential_slugs($plugin_dir, $plugin_basename) {
 
 /**
  * Clear the cached menu slugs when necessary.
- * You can hook this function to actions like plugin activation/deactivation if needed.
+ * Hook this function to actions like plugin activation/deactivation if needed.
  */
 function asl_clear_cached_menu_slugs() {
     delete_transient(ASL_MENU_SLUGS_TRANSIENT);
 }
 
-// Optional: Clear cache on plugin activation and deactivation
+// Clear cache on plugin activation and deactivation
 register_activation_hook(__FILE__, 'asl_clear_cached_menu_slugs');
 register_deactivation_hook(__FILE__, 'asl_clear_cached_menu_slugs');
+
+/**
+ * Log debug messages if WP_DEBUG is enabled.
+ *
+ * @param string $message The message to log.
+ */
+function asl_log_debug($message) {
+    if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+        error_log('[Add Settings Links] ' . $message);
+    }
+}
