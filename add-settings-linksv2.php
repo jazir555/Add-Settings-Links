@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define constants for transient caching
-define('ASL_MENU_SLUGS_TRANSIENT', 'cached_admin_menu_slugs');
+define('ASL_MENU_SLUGS_TRANSIENT', 'asl_cached_admin_menu_slugs');
 define('ASL_MENU_SLUGS_TRANSIENT_EXPIRATION', 12 * HOUR_IN_SECONDS);
 
 // Define constants for cached plugins
@@ -290,11 +290,11 @@ function asl_clear_cached_menu_slugs() {
 /**
  * Dynamically invalidate cache upon plugin updates or installations.
  *
- * @param bool   $update          Whether this is an update.
- * @param array  $args            Array of bulk update arguments.
+ * @param WP_Upgrader $upgrader        The upgrader instance.
+ * @param array       $options         Array of bulk update arguments.
  */
-function asl_dynamic_cache_invalidation($update, $args) {
-    if (in_array($args['type'], array('plugin', 'theme'), true)) {
+function asl_dynamic_cache_invalidation($upgrader, $options) {
+    if (isset($options['type']) && in_array($options['type'], array('plugin', 'theme'), true)) {
         asl_clear_cached_menu_slugs();
     }
 }
@@ -368,7 +368,7 @@ function asl_manual_overrides_field_callback() {
         }
     </style>
     <script>
-        // JavaScript for real-time search/filter on the settings page
+        // JavaScript for real-time search/filter on the settings page and URL validation
         document.addEventListener('DOMContentLoaded', function() {
             const searchInput = document.getElementById('asl_plugin_search');
             const tableRows = document.querySelectorAll('.asl-settings-table tbody tr');
@@ -382,6 +382,32 @@ function asl_manual_overrides_field_callback() {
                         row.style.display = '';
                     } else {
                         row.style.display = 'none';
+                    }
+                });
+            });
+
+            // URL Validation Feedback
+            const urlInputs = document.querySelectorAll('.asl-settings-table tbody tr td:nth-child(2) input[type="text"]');
+
+            urlInputs.forEach(function(input) {
+                input.addEventListener('blur', function() {
+                    const urls = this.value.split(',');
+                    let allValid = true;
+                    const urlPattern = new RegExp('^(https?:\\/\\/)?'+ // protocol
+                        '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|' + // domain name
+                        '((\\d{1,3}\\.){3}\\d{1,3}))' + // OR ip (v4) address
+                        '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*' + // port and path
+                        '(\\?[;&a-z\\d%_.~+=-]*)?' + // query string
+                        '(\\#[-a-z\\d_]*)?$','i'); // fragment locator
+
+                    urls.forEach(function(url) {
+                        if (url.trim() !== '' && !urlPattern.test(url.trim())) {
+                            allValid = false;
+                        }
+                    });
+
+                    if (!allValid) {
+                        alert('<?php echo esc_js( __('One or more URLs entered are invalid. Please ensure they are correctly formatted.', 'add-settings-links') ); ?>');
                     }
                 });
             });
