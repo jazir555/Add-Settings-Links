@@ -40,6 +40,3 @@ The **Add Settings Links** plugin allows administrators to add custom settings l
 - **Is there server-side validation?**
   - Yes, inputs are sanitized and validated on the server side to ensure data integrity.
 
-## Support
-
-For support, please visit [Your Support Page] or contact us at [your-email@example.com].
