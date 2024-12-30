@@ -14,6 +14,10 @@
 
 ## Installation
 
+Download the zip in the releases section and install it as you would any other plugin.
+
+OR
+
 1. Upload the `add-settings-links` folder to the `/wp-content/plugins/` directory.
 2. Activate the plugin through the 'Plugins' menu in WordPress.
 3. Navigate to `Settings > Add Settings Links` to configure manual overrides.
