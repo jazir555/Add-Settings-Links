@@ -15,6 +15,23 @@
     position: relative;
     display: inline-block;
 }
+.asl-tooltip {
+    margin-left: 5px;
+    cursor: pointer;
+    color: #555;
+}
+
+.asl-tooltip:hover::after {
+    content: attr(title);
+    position: absolute;
+    background-color: #333;
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    transform: translateX(-50%);
+    z-index: 1000;
+}
 
 .dropbtn {
     background-color: transparent;
