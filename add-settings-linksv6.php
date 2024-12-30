@@ -1069,12 +1069,6 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             <?php
         }
 
-        /**
-         * Sanitize user input from the manual overrides fields, keeping only valid URLs.
-         *
-         * @param mixed $input Raw user input.
-         * @return array       Sanitized array of URLs.
-         */
         public function sanitize_manual_overrides($input): array
         {
             if (!is_array($input)) {
@@ -1104,6 +1098,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             }
             return $sanitized;
         }
+
 
         /**
          * Renders the “Add Settings Links” settings page with the manual override form.
