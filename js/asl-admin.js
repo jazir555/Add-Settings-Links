@@ -44,3 +44,11 @@
         });
     });
 })(jQuery);
+jQuery(document).ready(function($) {
+    $('#asl_plugin_search').on('keyup', function() {
+        var value = $(this).val().toLowerCase();
+        $('.asl-settings-table tbody tr').filter(function() {
+            $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1)
+        });
+    });
+});
