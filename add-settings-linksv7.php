@@ -70,6 +70,11 @@ trait ASL_EnhancedSettingsDetection
     private function extended_find_settings_url(string $plugin_dir, string $plugin_basename)
     {
         $found_urls = [];
+        $menu_urls = [];
+        $file_urls = [];
+        $option_urls = [];
+        $hook_urls = [];
+        $found_urls = [];
 
         // 1. Use the main class’s method if it exists (e.g., scanning the cached WP admin menu).
         if (method_exists($this, 'find_settings_in_admin_menu')) {
@@ -124,8 +129,7 @@ trait ASL_EnhancedSettingsDetection
         $files = $this->recursively_scan_directory($plugin_dir, ['php']);
 
         foreach ($files as $file) {
-            // Skip vendor directories
-            if (stripos($file, '/vendor/') !== false) {
+            if (empty($file) || stripos($file, '/vendor/') !== false) {
                 continue;
             }
             $content = file_get_contents($file);
@@ -489,7 +493,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             foreach ($all_plugins as $plugin_file => $plugin_data) {
                 add_filter('plugin_action_links_' . $plugin_file, function($links, $file) use ($plugin_file, $plugin_data) {
                     return $this->maybe_add_settings_links($links, $plugin_file, $plugin_data);
-                }, 10, 2); // Corrected to accept 2 arguments
+                }, 20, 2); // Increased priority
             }
         }
         /**
@@ -524,11 +528,11 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          */
         public function enqueue_admin_assets(string $hook): void
         {
-           /**
-            * Enqueue admin assets with proper version and dependency handling
-            */
+            /**
+             * Enqueue admin assets with proper version and dependency handling
+             */
             if ($hook !== 'settings_page_asl_settings') {
-               return;
+                return;
             }
 
             $plugin_version = '1.7.3'; // Match plugin version
@@ -574,29 +578,8 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             } else {
                 $this->log_debug("JavaScript file {$js_file} not found.");
             }
-
-            // Enqueue JS if the file exists
-            if (file_exists($js_path)) {
-                wp_enqueue_script(
-                    'asl-admin-js',
-                    plugin_dir_url(__FILE__) . 'js/asl-admin.js',
-                    ['jquery'],
-                    $plugin_version,
-                    true
-                );
-
-                // Localize script for translation strings
-                wp_localize_script(
-                    'asl-admin-js',
-                    'ASL_Settings',
-                    [
-                        'invalid_url_message' => __('One or more URLs are invalid. Please ensure correct formatting.', 'add-settings-links'),
-                    ]
-                );
-            } else {
-                $this->log_debug('JavaScript file asl-admin.js not found.');
-            }
         }
+
         /**
          * Provide a method for the trait to discover potential settings by scanning the cached admin menu.
          * This method is called only if `method_exists($this, 'find_settings_in_admin_menu')` is true.
@@ -1282,7 +1265,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          */
         private function get_transient_key(string $base_key): string
         {
-            if (is_multisite()) {
+            if (function_exists('is_multisite') && is_multisite()) {
                 return $base_key . '_site_' . get_current_blog_id();
             }
             return $base_key;
