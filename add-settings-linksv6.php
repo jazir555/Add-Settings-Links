@@ -510,77 +510,51 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          *
          * @param string $hook The current admin page.
          */
-        public function enqueue_admin_assets($hook): void
+        public function enqueue_admin_assets(string $hook): void
         {
-            if (strpos($hook, 'asl_settings') === false) {
+            // Only enqueue on the plugin's settings page
+            if ($hook !== 'settings_page_asl_settings') {
                 return;
             }
         
-            // Enqueue CSS if the file exists
+            // Define file paths
             $css_path = plugin_dir_path(__FILE__) . 'css/asl-admin.css';
+            $js_path = plugin_dir_path(__FILE__) . 'js/asl-admin.js';
+            $version = '1.0.0';
+        
+            // Enqueue CSS if the file exists
             if (file_exists($css_path)) {
                 wp_enqueue_style(
                     'asl-admin-css',
                     plugin_dir_url(__FILE__) . 'css/asl-admin.css',
                     [],
-                    '1.0.0'
+                    $version
                 );
             } else {
                 $this->log_debug('CSS file asl-admin.css not found.');
             }
         
             // Enqueue JS if the file exists
-            $js_path = plugin_dir_path(__FILE__) . 'js/asl-admin.js';
             if (file_exists($js_path)) {
                 wp_enqueue_script(
                     'asl-admin-js',
                     plugin_dir_url(__FILE__) . 'js/asl-admin.js',
                     ['jquery'],
-                    '1.0.0',
+                    $version,
                     true
                 );
         
                 // Localize script for translation strings
-                wp_localize_script('asl-admin-js', 'ASL_Settings', [
-                    'invalid_url_message' => __('One or more URLs are invalid. Please ensure correct formatting.', 'add-settings-links'),
-                ]);
-            } else {
-                $this->log_debug('JavaScript file asl-admin.js not found.');
-            }
-            //Enqueue Admin Scripts
-            function asl_enqueue_admin_scripts($hook) {
-                // Only enqueue on the plugin's settings page
-                if ($hook !== 'settings_page_asl_settings') {
-                    return;
-                }
-            
-                // Enqueue the JavaScript file
-                wp_enqueue_script(
-                    'asl-admin-js',
-                    plugin_dir_url(__FILE__) . 'js/asl-admin.js',
-                    array('jquery'),
-                    '1.0.0',
-                    true
-                );
-            
-                // Localize script with necessary data
                 wp_localize_script(
                     'asl-admin-js',
                     'ASL_Settings',
-                    array(
+                    [
                         'invalid_url_message' => __('One or more URLs are invalid. Please ensure correct formatting.', 'add-settings-links'),
-                    )
+                    ]
                 );
-            
-                // Enqueue the CSS file
-                wp_enqueue_style(
-                    'asl-admin-css',
-                    plugin_dir_url(__FILE__) . 'css/asl-admin.css',
-                    array(),
-                    '1.0.0'
-                );
+            } else {
+                $this->log_debug('JavaScript file asl-admin.js not found.');
             }
-        }
 
         /**
          * Provide a method for the trait to discover potential settings by scanning the cached admin menu.
