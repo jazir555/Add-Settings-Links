@@ -1,9 +1,9 @@
 (function($) {
     $(document).ready(function() {
+        // Live-search filter targeting plugin names
         const searchInput = $('#asl_plugin_search');
         const tableRows   = $('.asl-settings-table tbody tr');
 
-        // 1. Live-search filter
         if (searchInput.length && tableRows.length) {
             searchInput.on('keyup', function() {
                 const query = $(this).val().toLowerCase();
@@ -14,7 +14,7 @@
             });
         }
 
-        // 2. Enhanced URL validation to include relative admin URLs
+        // Enhanced URL validation to include relative admin URLs
         const urlPattern = /^(https?:\/\/)?((([a-z\d]([a-z\d-]*[a-z\d])*)\.)+[a-z]{2,}|((\d{1,3}\.){3}\d{1,3}))(\:\d+)?(\/[-a-z\d%_.~+]*)*(\?[;&a-z\d%_.~+=-]*)?(\#[-a-z\d_]*)?$|^admin\.php\?page=[\w\-]+$/i;
 
         $('.asl-settings-table tbody tr td:nth-child(2) input[type="text"]').each(function() {
@@ -44,11 +44,3 @@
         });
     });
 })(jQuery);
-jQuery(document).ready(function($) {
-    $('#asl_plugin_search').on('keyup', function() {
-        var value = $(this).val().toLowerCase();
-        $('.asl-settings-table tbody tr').filter(function() {
-            $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1)
-        });
-    });
-});
