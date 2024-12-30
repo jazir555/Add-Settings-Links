@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 
 // PHP Version Check
 if (version_compare(PHP_VERSION, '7.4', '<')) {
-    add_action('admin_notices', function() {
+    add_action('admin_notices', function(): void {
         echo '<div class="notice notice-error"><p>';
         esc_html_e('Add Settings Links requires PHP version 7.4 or higher. Please update your PHP version.', 'add-settings-links');
         echo '</p></div>';
@@ -492,7 +492,19 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 }, 10, 2); // Corrected to accept 2 arguments
             }
         }
-
+        /**
+         * Verify nonce for form submissions
+         */
+        public function verify_nonce(): void
+        {
+            if (
+                isset($_POST['_wpnonce']) &&
+                isset($_POST['option_page']) &&
+                $_POST['option_page'] === 'asl_settings_group'
+            ) {
+                check_admin_referer('asl_settings_group-options');
+            }
+        }
         /**
          * Loads the plugin's text domain for i18n.
          */
@@ -510,52 +522,58 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          *
          * @param string $hook The current admin page.
          */
-        public function enqueue_admin_assets(string $hook): void
-        {
-            // Only enqueue on the plugin's settings page
+        public function enqueue_admin_assets(string $hook): void {
+            // Only enqueue assets for the specific settings page
             if ($hook !== 'settings_page_asl_settings') {
                 return;
             }
 
-            // Define file paths
-            $css_path = plugin_dir_path(__FILE__) . 'css/asl-admin.css';
-            $js_path = plugin_dir_path(__FILE__) . 'js/asl-admin.js';
-            $version = '1.0.0';
+            $plugin_version = '1.7.3'; // Match plugin version
+            $min_suffix = defined('SCRIPT_DEBUG') && SCRIPT_DEBUG ? '' : '.min';
 
-            // Enqueue CSS if the file exists
+            // Enqueue CSS
+            $css_file = "css/asl-admin{$min_suffix}.css";
+            $css_path = plugin_dir_path(__FILE__) . $css_file;
+
             if (file_exists($css_path)) {
                 wp_enqueue_style(
                     'asl-admin-css',
-                    plugin_dir_url(__FILE__) . 'css/asl-admin.css',
+                    plugin_dir_url(__FILE__) . $css_file,
                     [],
-                    $version
+                    $plugin_version
                 );
             } else {
-                $this->log_debug('CSS file asl-admin.css not found.');
+                $this->log_debug("CSS file {$css_file} not found.");
             }
 
-            // Enqueue JS if the file exists
+            // Enqueue JavaScript
+            $js_file = "js/asl-admin{$min_suffix}.js";
+            $js_path = plugin_dir_path(__FILE__) . $js_file;
+
             if (file_exists($js_path)) {
                 wp_enqueue_script(
                     'asl-admin-js',
-                    plugin_dir_url(__FILE__) . 'js/asl-admin.js',
+                    plugin_dir_url(__FILE__) . $js_file,
                     ['jquery'],
-                    $version,
+                    $plugin_version,
                     true
                 );
 
-                // Localize script for translation strings
+                // Localize script for translation strings and AJAX handling
                 wp_localize_script(
                     'asl-admin-js',
                     'ASL_Settings',
                     [
                         'invalid_url_message' => __('One or more URLs are invalid. Please ensure correct formatting.', 'add-settings-links'),
+                        'nonce' => wp_create_nonce('asl-admin-nonce'),
+                        'ajax_url' => admin_url('admin-ajax.php'),
                     ]
                 );
             } else {
-                $this->log_debug('JavaScript file asl-admin.js not found.');
+                $this->log_debug("JavaScript file {$js_file} not found.");
             }
         }
+
         /**
          * Provide a method for the trait to discover potential settings by scanning the cached admin menu.
          * This method is called only if `method_exists($this, 'find_settings_in_admin_menu')` is true.
@@ -1130,18 +1148,21 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
         }
 
         /**
-         * Renders the “Add Settings Links” settings page with the manual override form.
+         * Renders the settings page with proper security measures
          */
         public function render_settings_page(): void
         {
+            if (!current_user_can('manage_options')) {
+                wp_die(__('You do not have sufficient permissions to access this page.', 'add-settings-links'));
+            }
             ?>
             <div class="wrap">
                 <h1><?php esc_html_e('Add Settings Links', 'add-settings-links'); ?></h1>
-                <form method="post" action="options.php">
+                <form method="post" action="options.php" id="asl-settings-form">
                     <?php
-                        settings_fields('asl_settings_group');
-                        do_settings_sections('asl_settings');
-                        submit_button();
+                    settings_fields('asl_settings_group');
+                    do_settings_sections('asl_settings');
+                    submit_button();
                     ?>
                 </form>
             </div>
