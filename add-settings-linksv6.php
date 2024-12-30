@@ -547,6 +547,39 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             } else {
                 $this->log_debug('JavaScript file asl-admin.js not found.');
             }
+            //Enqueue Admin Scripts
+            function asl_enqueue_admin_scripts($hook) {
+                // Only enqueue on the plugin's settings page
+                if ($hook !== 'settings_page_asl_settings') {
+                    return;
+                }
+            
+                // Enqueue the JavaScript file
+                wp_enqueue_script(
+                    'asl-admin-js',
+                    plugin_dir_url(__FILE__) . 'js/asl-admin.js',
+                    array('jquery'),
+                    '1.0.0',
+                    true
+                );
+            
+                // Localize script with necessary data
+                wp_localize_script(
+                    'asl-admin-js',
+                    'ASL_Settings',
+                    array(
+                        'invalid_url_message' => __('One or more URLs are invalid. Please ensure correct formatting.', 'add-settings-links'),
+                    )
+                );
+            
+                // Enqueue the CSS file
+                wp_enqueue_style(
+                    'asl-admin-css',
+                    plugin_dir_url(__FILE__) . 'css/asl-admin.css',
+                    array(),
+                    '1.0.0'
+                );
+            }
         }
 
         /**
