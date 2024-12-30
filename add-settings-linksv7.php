@@ -522,10 +522,13 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          *
          * @param string $hook The current admin page.
          */
-        public function enqueue_admin_assets(string $hook): void {
-            // Only enqueue assets for the specific settings page
+        public function enqueue_admin_assets(string $hook): void
+        {
+           /**
+            * Enqueue admin assets with proper version and dependency handling
+            */
             if ($hook !== 'settings_page_asl_settings') {
-                return;
+               return;
             }
 
             $plugin_version = '1.7.3'; // Match plugin version
@@ -559,7 +562,6 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     true
                 );
 
-                // Localize script for translation strings and AJAX handling
                 wp_localize_script(
                     'asl-admin-js',
                     'ASL_Settings',
@@ -572,8 +574,29 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             } else {
                 $this->log_debug("JavaScript file {$js_file} not found.");
             }
-        }
 
+            // Enqueue JS if the file exists
+            if (file_exists($js_path)) {
+                wp_enqueue_script(
+                    'asl-admin-js',
+                    plugin_dir_url(__FILE__) . 'js/asl-admin.js',
+                    ['jquery'],
+                    $plugin_version,
+                    true
+                );
+
+                // Localize script for translation strings
+                wp_localize_script(
+                    'asl-admin-js',
+                    'ASL_Settings',
+                    [
+                        'invalid_url_message' => __('One or more URLs are invalid. Please ensure correct formatting.', 'add-settings-links'),
+                    ]
+                );
+            } else {
+                $this->log_debug('JavaScript file asl-admin.js not found.');
+            }
+        }
         /**
          * Provide a method for the trait to discover potential settings by scanning the cached admin menu.
          * This method is called only if `method_exists($this, 'find_settings_in_admin_menu')` is true.
