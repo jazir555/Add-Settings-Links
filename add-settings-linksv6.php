@@ -1116,7 +1116,6 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             return $sanitized;
         }
 
-
         /**
          * Renders the “Add Settings Links” settings page with the manual override form.
          */
