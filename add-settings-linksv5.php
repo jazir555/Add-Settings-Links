@@ -320,12 +320,12 @@ trait ASL_EnhancedSettingsDetection
      */
     private function is_valid_admin_url(string $path): bool
     {
-        // Allow only specific admin pages
-        $allowed_pages = [
+        // Allow only specific admin pages, extendable via filter
+        $allowed_pages = apply_filters('asl_allowed_admin_pages', [
             'admin.php',
             'options-general.php',
             // Add more known admin pages as needed
-        ];
+        ]);
 
         // Parse the URL
         $parsed = parse_url($path);
@@ -698,8 +698,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                         $settings_url = admin_url($settings_url);
                     }
                     if (!$this->link_already_exists($links, $settings_url)) {
-                        // Modify to handle multiple settings URLs as a dropdown
-                        $links = $this->prepend_settings_link([$settings_url]);
+                        $links = $this->prepend_settings_link($links, [$settings_url]); // Corrected call
                         $settings_added = true;
                     }
                 }
@@ -721,8 +720,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     }
                     $full_url = (strpos($url, 'http') === 0) ? $url : admin_url($url);
                     if (!$this->link_already_exists($links, $full_url)) {
-                        // Modify to handle multiple settings URLs as a dropdown
-                        $links = $this->prepend_settings_link([$full_url]);
+                        $links = $this->prepend_settings_link($links, [$full_url]); // Corrected call
                         $settings_added = true;
                     }
                 }
@@ -741,10 +739,11 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          * Prepends a “Settings” link to an array of plugin action links.
          * Handles multiple settings URLs by creating a dropdown menu.
          *
-         * @param array $settings_urls Array of settings page URLs.
-         * @return array               Modified array with the new settings link.
+         * @param array $links          Array of existing plugin action links.
+         * @param array $settings_urls  Array of settings page URLs.
+         * @return array                Modified array with the new settings link(s).
          */
-        private function prepend_settings_link(array $settings_urls): array
+        private function prepend_settings_link(array $links, array $settings_urls): array
         {
             if (empty($settings_urls)) {
                 return $links;
