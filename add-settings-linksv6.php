@@ -536,13 +536,6 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             }
         }
 
-
-            // Localize script for translation strings
-            wp_localize_script('asl-admin-js', 'ASL_Settings', [
-                'invalid_url_message' => __('One or more URLs are invalid. Please ensure correct formatting.', 'add-settings-links'),
-            ]);
-        }
-
         /**
          * Provide a method for the trait to discover potential settings by scanning the cached admin menu.
          * This method is called only if `method_exists($this, 'find_settings_in_admin_menu')` is true.
