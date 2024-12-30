@@ -59,9 +59,8 @@ trait ASL_EnhancedSettingsDetection
      * An "extended" approach to find potential settings URLs, combining multiple strategies.
      *
      * 1) If available, uses find_settings_in_admin_menu() from the main class to glean URLs from the cached WP admin menu.
-     * 2) Static file analysis of plugin files (regex searching for known patterns).
-     * 3) Option table analysis for plugin-specific settings.
-     * 4) Hook analysis for admin-related callbacks.
+     * 2) Option table analysis for plugin-specific settings.
+     * 3) Hook analysis for admin-related callbacks.
      *
      * @param string $plugin_dir       Plugin directory name.
      * @param string $plugin_basename  Plugin basename.
