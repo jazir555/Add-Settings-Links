@@ -125,7 +125,7 @@ trait ASL_EnhancedSettingsDetection
 
         foreach ($files as $file) {
             // Skip vendor directories
-            if (strpos($file, '/vendor/') !== false) {
+            if (stripos($file, '/vendor/') !== false) {
                 continue;
             }
             $content = file_get_contents($file);
