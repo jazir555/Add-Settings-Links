@@ -113,6 +113,13 @@ trait ASL_EnhancedSettingsDetection
             return [];
         }
 
+        $transient_key = $this->get_transient_key('asl_analyze_plugin_files_' . md5($plugin_basename));
+        $cached_urls = get_transient($transient_key);
+        if ($cached_urls !== false) {
+            $this->log_debug('Retrieved plugin file analysis from cache.');
+            return $cached_urls;
+        }
+
         $found_urls = [];
         $files = $this->recursively_scan_directory($plugin_dir, ['php']);
 
@@ -121,8 +128,9 @@ trait ASL_EnhancedSettingsDetection
             if (strpos($file, '/vendor/') !== false) {
                 continue;
             }
-            $content = @file_get_contents($file);
-            if (!$content) {
+            $content = file_get_contents($file);
+            if ($content === false) {
+                $this->log_debug("Failed to read file: $file");
                 continue;
             }
 
@@ -138,7 +146,7 @@ trait ASL_EnhancedSettingsDetection
             ];
 
             foreach ($patterns as $pattern) {
-                if (strpos($content, $pattern) !== false) {
+                if (stripos($content, $pattern) !== false) { // Case-insensitive search
                     // Extract potential URLs using regex
                     if (preg_match_all('/[\'"]([^\'"]*(settings|options|config)[^\'"]*)[\'"]/', $content, $matches)) {
                         foreach ($matches[1] as $match) {
@@ -147,11 +155,16 @@ trait ASL_EnhancedSettingsDetection
                             }
                         }
                     }
+                    break; // Stop checking other patterns once a match is found
                 }
             }
         }
 
-        return array_unique($found_urls);
+        $found_urls = array_unique($found_urls);
+        set_transient($transient_key, $found_urls, ASL_MENU_SLUGS_TRANSIENT_EXPIRATION);
+        $this->log_debug('Plugin file analysis cached.');
+
+        return $found_urls;
     }
 
     /**
@@ -166,14 +179,33 @@ trait ASL_EnhancedSettingsDetection
         global $wpdb;
         $found_urls = [];
 
-        $plugin_prefix = str_replace('-', '_', sanitize_title($plugin_dir)) . '_';
-        // Search for plugin-specific options
+        // Possible prefixes based on plugin directory and basename
+        $possible_prefixes = [
+            str_replace('-', '_', sanitize_title($plugin_dir)) . '_',
+            str_replace('-', '_', sanitize_title($plugin_basename)) . '_',
+            sanitize_title($plugin_dir) . '_',
+            sanitize_title($plugin_basename) . '_',
+        ];
+
+        // Build the LIKE patterns
+        $like_patterns = [];
+        foreach ($possible_prefixes as $prefix) {
+            $like_patterns[] = $wpdb->esc_like($prefix) . '%';
+        }
+
+        if (empty($like_patterns)) {
+            return [];
+        }
+
+        // Construct the SQL query with dynamic placeholders
+        $placeholders = implode(' OR option_name LIKE ', array_fill(0, count($like_patterns), '%s'));
+        $query = "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE " . $placeholders;
+
+        // Execute the query
         $options = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT option_name FROM {$wpdb->options}
-                 WHERE option_name LIKE %s OR option_name LIKE %s",
-                $wpdb->esc_like($plugin_prefix) . '%',
-                '%' . $wpdb->esc_like('_' . $plugin_dir) . '%'
+                $query,
+                ...$like_patterns
             )
         );
 
@@ -190,6 +222,12 @@ trait ASL_EnhancedSettingsDetection
                 $potential_url = 'admin.php?page=' . $plugin_dir . '-' . $pattern;
                 if ($this->is_valid_admin_url($potential_url)) {
                     $found_urls[] = admin_url($potential_url);
+                }
+
+                // Additionally, try using plugin basename
+                $potential_url_basename = 'admin.php?page=' . $plugin_basename . '-' . $pattern;
+                if ($this->is_valid_admin_url($potential_url_basename)) {
+                    $found_urls[] = admin_url($potential_url_basename);
                 }
             }
         }
@@ -261,12 +299,19 @@ trait ASL_EnhancedSettingsDetection
     private function extract_urls_via_reflection($classOrObject, string $method, bool $isStatic = false): array
     {
         $found = [];
+        $cache_key = 'asl_reflection_' . md5($classOrObject . $method . ($isStatic ? '_static' : ''));
+        $cached_urls = get_transient($cache_key);
+        if ($cached_urls !== false) {
+            $this->log_debug('Retrieved reflection URLs from cache.');
+            return $cached_urls;
+        }
+
         try {
             $reflection = $isStatic
                 ? new \ReflectionMethod($classOrObject, $method)
                 : new \ReflectionMethod(get_class($classOrObject), $method);
 
-            $content = @file_get_contents($reflection->getFileName());
+            $content = file_get_contents($reflection->getFileName());
             if ($content && preg_match_all('/[\'"]([^\'"]*(settings|options|config)[^\'"]*)[\'"]/', $content, $matches)) {
                 foreach ($matches[1] as $match) {
                     if ($this->is_valid_admin_url($match)) {
@@ -275,9 +320,14 @@ trait ASL_EnhancedSettingsDetection
                 }
             }
         } catch (\ReflectionException $e) {
-            // Optionally log or handle reflection errors
+            // Log the exception for debugging
             $this->log_debug('ReflectionException: ' . $e->getMessage());
         }
+
+        $found = array_unique($found);
+        set_transient($cache_key, $found, ASL_MENU_SLUGS_TRANSIENT_EXPIRATION);
+        $this->log_debug('Reflection URLs cached.');
+
         return $found;
     }
 
@@ -424,9 +474,9 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
 
             $all_plugins = get_plugins();
             foreach ($all_plugins as $plugin_file => $plugin_data) {
-                add_filter('plugin_action_links_' . $plugin_file, function($links) use ($plugin_file, $plugin_data) {
+                add_filter('plugin_action_links_' . $plugin_file, function($links, $file) use ($plugin_file, $plugin_data) {
                     return $this->maybe_add_settings_links($links, $plugin_file, $plugin_data);
-                }, 10, 1);
+                }, 10, 2); // Corrected to accept 2 arguments
             }
         }
 
@@ -605,8 +655,8 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             if (!empty($menu) && is_array($menu)) {
                 foreach ($menu as $item) {
                     if (!empty($item[2])) {
-                        $slug   = $item[2];
-                        $parent = $item[0] ?? '';
+                        $slug   = sanitize_text_field($item[2]);
+                        $parent = isset($item[0]) ? sanitize_text_field($item[0]) : '';
                         $url    = $this->construct_menu_url($slug);
                         $all_slugs[] = [
                             'slug'   => $slug,
@@ -623,12 +673,12 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 foreach ($submenu as $parent_slug => $items) {
                     foreach ((array)$items as $item) {
                         if (!empty($item[2])) {
-                            $slug  = $item[2];
+                            $slug  = sanitize_text_field($item[2]);
                             $url   = $this->construct_menu_url($slug, $parent_slug);
                             $all_slugs[] = [
                                 'slug'   => $slug,
                                 'url'    => $url,
-                                'parent' => $parent_slug,
+                                'parent' => sanitize_text_field($parent_slug),
                             ];
                             $this->log_debug("Caching submenu slug: $slug => $url (parent: $parent_slug)");
                         }
@@ -701,7 +751,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                         $settings_url = admin_url($settings_url);
                     }
                     if (!$this->link_already_exists($links, $settings_url)) {
-                        $links = $this->prepend_settings_link($links, [$settings_url]); // Corrected call
+                        $links = $this->prepend_settings_link($links, [$settings_url], $plugin_data['Name']);
                         $settings_added = true;
                     }
                 }
@@ -711,9 +761,9 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             }
 
             // 2. Use the trait’s extended detection approach
-            $plugin_basename = plugin_basename($plugin_file);
-            $plugin_dir      = dirname($plugin_basename);
-            $urls = $this->extended_find_settings_url($plugin_dir, $plugin_basename);
+            $plugin_basename_clean = plugin_basename($plugin_file);
+            $plugin_dir_clean      = dirname($plugin_basename_clean);
+            $urls = $this->extended_find_settings_url($plugin_dir_clean, $plugin_basename_clean);
 
             if (!empty($urls)) {
                 foreach ($urls as $url) {
@@ -723,7 +773,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     }
                     $full_url = (strpos($url, 'http') === 0) ? $url : admin_url($url);
                     if (!$this->link_already_exists($links, $full_url)) {
-                        $links = $this->prepend_settings_link($links, [$full_url]); // Corrected call
+                        $links = $this->prepend_settings_link($links, [$full_url], $plugin_data['Name']);
                         $settings_added = true;
                     }
                 }
@@ -731,8 +781,8 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
 
             // 3. If still no link found
             if (!$settings_added) {
-                $this->missing_settings[] = $plugin_basename;
-                $this->log_debug("No recognized settings link found for plugin: $plugin_basename");
+                $this->missing_settings[] = $plugin_basename_clean;
+                $this->log_debug("No recognized settings link found for plugin: $plugin_basename_clean");
             }
 
             return $links;
@@ -742,11 +792,12 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          * Prepends a “Settings” link to an array of plugin action links.
          * Handles multiple settings URLs by creating a dropdown menu.
          *
-         * @param array $links          Array of existing plugin action links.
-         * @param array $settings_urls  Array of settings page URLs.
-         * @return array                Modified array with the new settings link(s).
+         * @param array  $links          Array of existing plugin action links.
+         * @param array  $settings_urls  Array of settings page URLs.
+         * @param string $plugin_name    (Optional) Name of the plugin for label clarity.
+         * @return array                 Modified array with the new settings link(s).
          */
-        private function prepend_settings_link(array $links, array $settings_urls): array
+        private function prepend_settings_link(array $links, array $settings_urls, string $plugin_name = ''): array
         {
             if (empty($settings_urls)) {
                 return $links;
@@ -754,22 +805,37 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
 
             if (count($settings_urls) === 1) {
                 // Single settings URL, add as a single link
+                $label = !empty($plugin_name) ? sprintf(__('Settings for %s', 'add-settings-links'), $plugin_name) : __('Settings', 'add-settings-links');
                 $html = sprintf(
                     '<a href="%s">%s</a>',
                     esc_url($settings_urls[0]),
-                    esc_html__('Settings', 'add-settings-links')
+                    esc_html($label)
                 );
                 array_unshift($links, $html);
             } else {
-                // Multiple settings URLs, add as a dropdown
-                $dropdown = '<div class="dropdown">';
-                $dropdown .= '<button class="dropbtn">' . esc_html__('Settings', 'add-settings-links') . '</button>';
-                $dropdown .= '<div class="dropdown-content">';
-                foreach ($settings_urls as $url) {
+                // Multiple settings URLs, add as an accessible dropdown
+                $dropdown_id = 'asl-dropdown-' . sanitize_title_with_dashes($plugin_name) . '-' . uniqid();
+                $dropdown = '<div class="dropdown" role="menu" aria-haspopup="true" aria-expanded="false">';
+                $dropdown .= sprintf(
+                    '<button class="dropbtn" id="%s-button" aria-controls="%s-menu">%s</button>',
+                    esc_attr($dropdown_id),
+                    esc_attr($dropdown_id),
+                    esc_html__('Settings', 'add-settings-links')
+                );
+                $dropdown .= sprintf(
+                    '<div class="dropdown-content" id="%s-menu" role="menu" aria-labelledby="%s-button">',
+                    esc_attr($dropdown_id),
+                    esc_attr($dropdown_id)
+                );
+                foreach ($settings_urls as $index => $url) {
+                    $label = sprintf(__('Settings %d', 'add-settings-links'), $index + 1);
+                    if (!empty($plugin_name)) {
+                        $label = sprintf(__('Settings for %s %d', 'add-settings-links'), $plugin_name, $index + 1);
+                    }
                     $dropdown .= sprintf(
-                        '<a href="%s">%s</a>',
+                        '<a href="%s" role="menuitem">%s</a>',
                         esc_url($url),
-                        esc_html__('Settings', 'add-settings-links')
+                        esc_html($label)
                     );
                 }
                 $dropdown .= '</div></div>';
@@ -1015,6 +1081,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             }
             $sanitized = [];
             foreach ($input as $plugin_file => $raw_value) {
+                $plugin_file_safe = sanitize_text_field($plugin_file);
                 $url_candidates = array_map('trim', explode(',', (string)$raw_value));
                 $valid_urls = [];
                 foreach ($url_candidates as $candidate) {
@@ -1031,7 +1098,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     }
                 }
                 if (!empty($valid_urls)) {
-                    $sanitized[$plugin_file] = $valid_urls;
+                    $sanitized[$plugin_file_safe] = $valid_urls;
                 }
             }
             return $sanitized;
