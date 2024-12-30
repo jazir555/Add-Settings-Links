@@ -318,7 +318,7 @@ trait ASL_EnhancedSettingsDetection
     }
 }
 
-if (!class_exists('ASL_AddSettingsLinks')):
+if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')):
 
 /**
  * Class AddSettingsLinks
@@ -349,8 +349,8 @@ class ASL_AddSettingsLinks
         // 2. Conditionally cache admin menu slugs (single-site or network).
         add_action('admin_menu', [$this, 'maybe_cache_admin_menu_slugs'], 9999);
 
-        // 3. Add or skip plugin settings links on the plugins screens (single-site or network).
-        add_filter('plugin_action_links_' . plugin_basename(__FILE__), [$this, 'maybe_add_settings_links'], 10, 2);
+        // 3. Dynamically add plugin action links filters for all plugins.
+        add_action('admin_init', [$this, 'add_dynamic_plugin_action_links']);
 
         // 4. Clear cached slugs whenever a plugin is activated/deactivated.
         add_action('activated_plugin', [$this, 'clear_cached_menu_slugs']);
@@ -371,6 +371,21 @@ class ASL_AddSettingsLinks
 
         // 9. Enqueue Admin Scripts and Styles
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
+    }
+
+    /**
+     * Dynamically add plugin action links filters for all installed plugins.
+     */
+    public function add_dynamic_plugin_action_links(): void
+    {
+        if (!function_exists('get_plugins')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        $all_plugins = get_plugins();
+        foreach ($all_plugins as $plugin_file => $plugin_data) {
+            add_filter('plugin_action_links_' . $plugin_file, [$this, 'maybe_add_settings_links'], 10, 2);
+        }
     }
 
     /**
@@ -615,22 +630,11 @@ class ASL_AddSettingsLinks
      */
     public function maybe_add_settings_links(array $links, string $file): array
     {
-        $valid_screens = ['plugins', 'plugins-network'];
-        if (!$this->should_run_on_screen($valid_screens)) {
+        // Prevent adding settings link to the plugin itself
+        if ($file === plugin_basename(__FILE__)) {
             return $links;
         }
-        return $this->add_missing_settings_links($links, $file);
-    }
 
-    /**
-     * Add a “Settings” link if the plugin is missing one, either from manual overrides or from detection.
-     *
-     * @param array  $links Array of existing plugin action links.
-     * @param string $file  Plugin file path.
-     * @return array         Modified array of plugin action links.
-     */
-    private function add_missing_settings_links(array $links, string $file): array
-    {
         if (!current_user_can('manage_options')) {
             return $links;
         }
@@ -925,15 +929,6 @@ class ASL_AddSettingsLinks
             </tbody>
         </table>
 
-        <style>
-            .asl-settings-table tbody tr:hover {
-                background-color: #f1f1f1;
-            }
-            .asl-error-message {
-                font-size: 0.9em;
-            }
-        </style>
-
         <?php
     }
 
@@ -954,8 +949,15 @@ class ASL_AddSettingsLinks
             $valid_urls = [];
             foreach ($url_candidates as $candidate) {
                 $candidate = esc_url_raw($candidate);
-                if (!empty($candidate) && filter_var($candidate, FILTER_VALIDATE_URL)) {
-                    $valid_urls[] = $candidate;
+                if (!empty($candidate)) {
+                    // Check if it's an absolute URL
+                    if (filter_var($candidate, FILTER_VALIDATE_URL)) {
+                        $valid_urls[] = $candidate;
+                    }
+                    // Check if it's a valid relative admin URL
+                    elseif (preg_match('/^admin\.php\?page=[\w\-]+$/', $candidate)) {
+                        $valid_urls[] = $candidate;
+                    }
                 }
             }
             if (!empty($valid_urls)) {
