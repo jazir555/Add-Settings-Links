@@ -10,6 +10,10 @@
          * @param {Function} func - The function to debounce.
          * @param {number} wait - The number of milliseconds to delay.
          * @return {Function} - The debounced function.
+         *
+         * @example
+         * // Will only execute `handleSearch` after 300ms have passed since the last call
+         * searchInput.on('keyup', debounce(handleSearch, 300));
          */
         function debounce(func, wait) {
             let timeout;
@@ -58,10 +62,10 @@
                 }
 
                 if (!allValid) {
-                    $(this).css('border-color', 'red');
+                    $(this).css('border-color', 'red').attr('aria-invalid', 'true');
                     errorMessage.text(ASL_Settings.invalid_url_message).show();
                 } else {
-                    $(this).css('border-color', '');
+                    $(this).css('border-color', '').attr('aria-invalid', 'false');
                     errorMessage.text('').hide();
                 }
             });
