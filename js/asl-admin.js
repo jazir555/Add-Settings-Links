@@ -44,3 +44,22 @@
         });
     });
 })(jQuery);
+function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func.apply(this, args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+searchInput.on('keyup', debounce(function() {
+    const query = $(this).val().toLowerCase();
+    tableRows.each(function() {
+        const pluginName = $(this).find('td:first-child').text().toLowerCase();
+        $(this).toggle(pluginName.includes(query));
+    });
+}, 300)); // Adjust the wait time as needed
