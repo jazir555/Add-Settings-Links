@@ -84,13 +84,7 @@ trait ASL_EnhancedSettingsDetection
             }
         }
 
-        // 2. Static file analysis (advanced).
-        $file_urls = $this->analyze_plugin_files($plugin_basename);
-        if ($file_urls) {
-            $found_urls = array_merge($found_urls, $file_urls);
-        }
-
-        // 3. Option table analysis.
+        // 2. Option table analysis.
         $option_urls = $this->analyze_options_table($plugin_dir, $plugin_basename);
         if ($option_urls) {
             $found_urls = array_merge($found_urls, $option_urls);
@@ -105,71 +99,6 @@ trait ASL_EnhancedSettingsDetection
         return !empty($found_urls) ? array_unique($found_urls) : false;
     }
 
-    /**
-     * Analyze plugin files for potential settings pages.
-     *
-     * @param string $plugin_basename Plugin basename.
-     * @return array                  Array of discovered admin URLs.
-     */
-    private function analyze_plugin_files(string $plugin_basename): array
-    {
-        $plugin_dir = WP_PLUGIN_DIR . '/' . dirname($plugin_basename);
-        if (!is_dir($plugin_dir)) {
-            return [];
-        }
-
-        $transient_key = $this->get_transient_key('asl_analyze_plugin_files_' . md5($plugin_basename));
-        $cached_urls = get_transient($transient_key);
-        if ($cached_urls !== false) {
-            $this->log_debug('Retrieved plugin file analysis from cache.');
-            return $cached_urls;
-        }
-
-        $found_urls = [];
-        $files = $this->recursively_scan_directory($plugin_dir, ['php']);
-
-        foreach ($files as $file) {
-            if (empty($file) || stripos($file, '/vendor/') !== false) {
-                continue;
-            }
-            $content = file_get_contents($file);
-            if ($content === false) {
-                $this->log_debug("Failed to read file: $file");
-                continue;
-            }
-
-            // Look for common settings page registration patterns
-            $patterns = [
-                'add_menu_page',
-                'add_options_page',
-                'add_submenu_page',
-                'register_setting',
-                'add_settings_section',
-                'settings_fields',
-                'options-general.php'
-            ];
-
-            foreach ($patterns as $pattern) {
-                if (stripos($content, $pattern) !== false) { // Case-insensitive search
-                    // Extract potential URLs using regex
-                    if (preg_match_all('/[\'"]([^\'"]*(settings|options|config)[^\'"]*)[\'"]/', $content, $matches)) {
-                        foreach ($matches[1] as $match) {
-                            if ($this->is_valid_admin_url($match)) {
-                                $found_urls[] = admin_url($match);
-                            }
-                        }
-                    }
-                    break; // Stop checking other patterns once a match is found
-                }
-            }
-        }
-
-        $found_urls = array_unique($found_urls);
-        set_transient($transient_key, $found_urls, ASL_MENU_SLUGS_TRANSIENT_EXPIRATION);
-        $this->log_debug('Plugin file analysis cached.');
-
-        return $found_urls;
-    }
     function asl_render_settings_page() {
         ?>
         <div class="wrap">
