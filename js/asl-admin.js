@@ -4,6 +4,8 @@
         const $searchInput = $('#asl_plugin_search');
         const $tableRows   = $('.asl-settings-table tbody tr');
         const $errorMessages = $('.asl-error-message');
+        const $textInputs = $('.asl-settings-table tbody tr td:nth-child(2) input[type="text"]');
+        const $form = $('form#asl-settings-form'); // Ensure your form has the ID 'asl-settings-form'
 
         /**
          * Debounce function to limit the rate at which a function can fire.
@@ -82,7 +84,6 @@
         };
 
         // Attach debounced URL validation handler if input fields exist
-        const $textInputs = $('.asl-settings-table tbody tr td:nth-child(2) input[type="text"]');
         if ($textInputs.length) {
             $textInputs.each(function() {
                 $(this).on('input', debounce(handleURLValidation, 300));
@@ -96,16 +97,16 @@
          * @param {jQuery.Event} e - The form submission event.
          */
         function focusFirstInvalidInput(e) {
-            const $invalidInput = $('.asl-settings-table tbody tr td:nth-child(2) input[type="text"][aria-invalid="true"]').first();
+            const $invalidInput = $textInputs.filter('[aria-invalid="true"]').first();
             if ($invalidInput.length) {
                 e.preventDefault();
                 $invalidInput.focus();
-                alert(ASL_Settings.invalid_url_message); // Optionally replace with a more user-friendly notification
+                // Replace alert with a more user-friendly notification if desired
+                alert(ASL_Settings.invalid_url_message);
             }
         }
 
         // Attach form submission handler to focus on the first invalid input
-        const $form = $('form#asl-settings-form'); // Ensure your form has the ID 'asl-settings-form'
         if ($form.length) {
             $form.on('submit', focusFirstInvalidInput);
         }
