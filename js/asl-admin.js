@@ -64,12 +64,16 @@
                     }
                 }
 
-                if (!allValid) {
-                    $(this).css('border-color', 'red').attr('aria-invalid', 'true');
-                    errorMessage.text(ASL_Settings.invalid_url_message).show();
+                if (errorMessage.length) {
+                    if (!allValid) {
+                        $(this).css('border-color', 'red').attr('aria-invalid', 'true');
+                        errorMessage.text(ASL_Settings.invalid_url_message).show();
+                    } else {
+                        $(this).css('border-color', '').attr('aria-invalid', 'false');
+                        errorMessage.text('').hide();
+                    }
                 } else {
-                    $(this).css('border-color', '').attr('aria-invalid', 'false');
-                    errorMessage.text('').hide();
+                    console.warn('Error message element is missing for the input field.');
                 }
             });
         });
