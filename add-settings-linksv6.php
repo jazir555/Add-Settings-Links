@@ -790,7 +790,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
 
         /**
          * Prepends a “Settings” link to an array of plugin action links.
-         * Handles multiple settings URLs by creating a dropdown menu.
+         * Handles multiple settings URLs by creating an accessible dropdown menu.
          *
          * @param array  $links          Array of existing plugin action links.
          * @param array  $settings_urls  Array of settings page URLs.
@@ -1034,8 +1034,9 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 </thead>
                 <tbody>
                     <?php foreach ($plugins as $plugin_file => $plugin_data) :
-                        $existing = isset($manual_overrides[$plugin_file])
-                            ? (array)$manual_overrides[$plugin_file]
+                        $plugin_file_safe = sanitize_text_field($plugin_file);
+                        $existing = isset($manual_overrides[$plugin_file_safe])
+                            ? (array)$manual_overrides[$plugin_file_safe]
                             : [];
                         $existing_str = implode(',', $existing);
                         ?>
@@ -1044,14 +1045,14 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                             <td>
                                 <input
                                     type="text"
-                                    name="asl_manual_overrides[<?php echo esc_attr($plugin_file); ?>]"
+                                    name="asl_manual_overrides[<?php echo esc_attr($plugin_file_safe); ?>]"
                                     value="<?php echo esc_attr($existing_str); ?>"
                                     style="width:100%;"
-                                    aria-describedby="asl_manual_overrides_description_<?php echo esc_attr($plugin_file); ?>"
+                                    aria-describedby="asl_manual_overrides_description_<?php echo esc_attr($plugin_file_safe); ?>"
                                 />
                                 <p
                                     class="description"
-                                    id="asl_manual_overrides_description_<?php echo esc_attr($plugin_file); ?>"
+                                    id="asl_manual_overrides_description_<?php echo esc_attr($plugin_file_safe); ?>"
                                 >
                                     <?php esc_html_e(
                                         'Enter one or multiple settings URLs separated by commas.',
