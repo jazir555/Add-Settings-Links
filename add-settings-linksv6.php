@@ -516,12 +516,12 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             if ($hook !== 'settings_page_asl_settings') {
                 return;
             }
-        
+
             // Define file paths
             $css_path = plugin_dir_path(__FILE__) . 'css/asl-admin.css';
             $js_path = plugin_dir_path(__FILE__) . 'js/asl-admin.js';
             $version = '1.0.0';
-        
+
             // Enqueue CSS if the file exists
             if (file_exists($css_path)) {
                 wp_enqueue_style(
@@ -533,7 +533,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             } else {
                 $this->log_debug('CSS file asl-admin.css not found.');
             }
-        
+
             // Enqueue JS if the file exists
             if (file_exists($js_path)) {
                 wp_enqueue_script(
@@ -543,7 +543,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     $version,
                     true
                 );
-        
+
                 // Localize script for translation strings
                 wp_localize_script(
                     'asl-admin-js',
@@ -555,7 +555,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             } else {
                 $this->log_debug('JavaScript file asl-admin.js not found.');
             }
-
+        }
         /**
          * Provide a method for the trait to discover potential settings by scanning the cached admin menu.
          * This method is called only if `method_exists($this, 'find_settings_in_admin_menu')` is true.
