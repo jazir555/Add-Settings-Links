@@ -1,17 +1,41 @@
 (function($) {
     $(document).ready(function() {
-        // Live-search filter targeting plugin names
+        // Live-search filter targeting plugin names with debounce
         const searchInput = $('#asl_plugin_search');
         const tableRows   = $('.asl-settings-table tbody tr');
 
-        if (searchInput.length && tableRows.length) {
-            searchInput.on('keyup', function() {
-                const query = $(this).val().toLowerCase();
-                tableRows.each(function() {
-                    const pluginName = $(this).find('td:first-child').text().toLowerCase();
-                    $(this).toggle(pluginName.includes(query));
-                });
+        /**
+         * Debounce function to limit the rate at which a function can fire.
+         *
+         * @param {Function} func - The function to debounce.
+         * @param {number} wait - The number of milliseconds to delay.
+         * @return {Function} - The debounced function.
+         */
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), wait);
+            };
+        }
+
+        /**
+         * Handler function for live-search filtering.
+         *
+         * @this {HTMLElement} - The search input element.
+         */
+        const handleSearch = function() {
+            const query = $(this).val().toLowerCase();
+            tableRows.each(function() {
+                const pluginName = $(this).find('td:first-child').text().toLowerCase();
+                $(this).toggle(pluginName.includes(query));
             });
+        };
+
+        // Attach debounced search handler if elements exist
+        if (searchInput.length && tableRows.length) {
+            searchInput.on('keyup', debounce(handleSearch, 300));
         }
 
         // Enhanced URL validation to include relative admin URLs
@@ -44,22 +68,3 @@
         });
     });
 })(jQuery);
-function debounce(func, wait) {
-    let timeout;
-    return function(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func.apply(this, args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
-searchInput.on('keyup', debounce(function() {
-    const query = $(this).val().toLowerCase();
-    tableRows.each(function() {
-        const pluginName = $(this).find('td:first-child').text().toLowerCase();
-        $(this).toggle(pluginName.includes(query));
-    });
-}, 300)); // Adjust the wait time as needed
