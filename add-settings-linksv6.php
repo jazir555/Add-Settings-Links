@@ -166,7 +166,20 @@ trait ASL_EnhancedSettingsDetection
 
         return $found_urls;
     }
-
+    function asl_render_settings_page() {
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Add Settings Links', 'add-settings-links'); ?></h1>
+            <form id="asl-settings-form" method="post" action="options.php">
+                <?php
+                    settings_fields('asl_settings_group');
+                    do_settings_sections('asl_settings');
+                    submit_button();
+                ?>
+            </form>
+        </div>
+        <?php
+    }
     /**
      * Analyze the WP options table for plugin-specific setting references.
      *
