@@ -89,7 +89,7 @@ trait ASL_EnhancedSettingsDetection
             $found_urls = array_merge($found_urls, $option_urls);
         }
 
-        // 4. Hook analysis.
+        // 3. Hook analysis.
         $hook_urls = $this->analyze_registered_hooks($plugin_dir);
         if ($hook_urls) {
             $found_urls = array_merge($found_urls, $hook_urls);
