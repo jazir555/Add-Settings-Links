@@ -42,7 +42,7 @@
 
         // Attach debounced search handler if elements exist
         if ($searchInput.length && $tableRows.length) {
-            $searchInput.on('keyup', debounce(handleSearch, 300));
+            $searchInput.off('keyup').on('keyup', debounce(handleSearch, 300));
         }
 
         // Enhanced URL validation to include relative admin URLs
@@ -73,7 +73,12 @@
             if ($input.length && errorMessage.length) {
                 if (!allValid) {
                     $input.css('border-color', 'red').attr('aria-invalid', 'true');
-                    errorMessage.text(ASL_Settings.invalid_url_message).show();
+                    if (typeof ASL_Settings !== 'undefined' && ASL_Settings.invalid_url_message) {
+                        errorMessage.text(ASL_Settings.invalid_url_message).show();
+                    } else {
+                        errorMessage.text('Invalid URL.').show();
+                        console.warn('ASL_Settings.invalid_url_message is not defined.');
+                    }
                 } else {
                     $input.css('border-color', '').attr('aria-invalid', 'false');
                     errorMessage.text('').hide();
@@ -85,9 +90,7 @@
 
         // Attach debounced URL validation handler if input fields exist
         if ($textInputs.length) {
-            $textInputs.each(function() {
-                $(this).on('input', debounce(handleURLValidation, 300));
-            });
+            $textInputs.off('input').on('input', debounce(handleURLValidation, 300));
         }
 
         /**
@@ -102,13 +105,18 @@
                 e.preventDefault();
                 $invalidInput.focus();
                 // Replace alert with a more user-friendly notification if desired
-                alert(ASL_Settings.invalid_url_message);
+                if (typeof ASL_Settings !== 'undefined' && ASL_Settings.invalid_url_message) {
+                    alert(ASL_Settings.invalid_url_message);
+                } else {
+                    alert('One or more URLs are invalid. Please ensure correct formatting.');
+                    console.warn('ASL_Settings.invalid_url_message is not defined.');
+                }
             }
         }
 
         // Attach form submission handler to focus on the first invalid input
         if ($form.length) {
-            $form.on('submit', focusFirstInvalidInput);
+            $form.off('submit').on('submit', focusFirstInvalidInput);
         }
     });
 })(jQuery);
