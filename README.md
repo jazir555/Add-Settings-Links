@@ -2,7 +2,7 @@
 
 ## Description
 
-The **Add Settings Links** plugin allows administrators to add custom settings links to plugin entries on the Plugins page, providing quick access to configuration options.
+**Add Settings Links** allows administrators to add custom settings links to plugin entries on the Plugins page, providing quick access to configuration options.
 
 ## Features
 
