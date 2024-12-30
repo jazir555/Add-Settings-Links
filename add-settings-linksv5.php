@@ -424,7 +424,9 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
 
             $all_plugins = get_plugins();
             foreach ($all_plugins as $plugin_file => $plugin_data) {
-                add_filter('plugin_action_links_' . $plugin_file, [$this, 'maybe_add_settings_links'], 10, 2);
+                add_filter('plugin_action_links_' . $plugin_file, function($links) use ($plugin_file, $plugin_data) {
+                    return $this->maybe_add_settings_links($links, $plugin_file, $plugin_data);
+                }, 10, 1);
             }
         }
 
@@ -666,14 +668,15 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
         /**
          * Possibly add or skip plugin settings links on single-site or network plugins pages.
          *
-         * @param array  $links Array of existing plugin action links.
-         * @param string $file  Plugin file path.
-         * @return array         Modified array of plugin action links.
+         * @param array  $links        Array of existing plugin action links.
+         * @param string $plugin_file  Plugin file path.
+         * @param array  $plugin_data  Plugin data array.
+         * @return array               Modified array of plugin action links.
          */
-        public function maybe_add_settings_links(array $links, string $file): array
+        public function maybe_add_settings_links(array $links, string $plugin_file, array $plugin_data): array
         {
             // Prevent adding settings link to the plugin itself
-            if ($file === plugin_basename(__FILE__)) {
+            if ($plugin_file === plugin_basename(__FILE__)) {
                 return $links;
             }
 
@@ -688,8 +691,8 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             $manual_overrides = get_option('asl_manual_overrides', []);
 
             // 1. Manual overrides
-            if (!empty($manual_overrides[$file])) {
-                foreach ((array)$manual_overrides[$file] as $settings_url) {
+            if (!empty($manual_overrides[$plugin_file])) {
+                foreach ((array)$manual_overrides[$plugin_file] as $settings_url) {
                     $settings_url = trim($settings_url);
                     if (!$settings_url) {
                         continue;
@@ -708,7 +711,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             }
 
             // 2. Use the trait’s extended detection approach
-            $plugin_basename = plugin_basename($file);
+            $plugin_basename = plugin_basename($plugin_file);
             $plugin_dir      = dirname($plugin_basename);
             $urls = $this->extended_find_settings_url($plugin_dir, $plugin_basename);
 
