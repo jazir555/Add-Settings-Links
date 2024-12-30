@@ -20,7 +20,22 @@
     cursor: pointer;
     color: #555;
 }
+.asl-error-message {
+    color: red;
+    display: none;
+    font-size: 0.9em;
+    margin-top: 5px;
+}
 
+/* Optional: Style invalid input fields for better visibility */
+input[aria-invalid="true"] {
+    border-color: red;
+}
+
+/* Optional: Add focus styles for better keyboard navigation */
+.asl-settings-table tbody tr td:nth-child(2) input[type="text"]:focus {
+    outline: 2px solid #4CAF50;
+}
 .asl-tooltip:hover::after {
     content: attr(title);
     position: absolute;
