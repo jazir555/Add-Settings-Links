@@ -45,6 +45,9 @@
         // Enhanced URL validation to include relative admin URLs
         const urlPattern = /^(https?:\/\/)?((([a-z\d]([a-z\d-]*[a-z\d])*)\.)+[a-z]{2,}|((\d{1,3}\.){3}\d{1,3}))(\:\d+)?(\/[-a-z\d%_.~+]*)*(\?[;&a-z\d%_.~+=-]*)?(\#[-a-z\d_]*)?$|^admin\.php\?page=[\w\-]+$/i;
 
+        // Cache error message elements for performance
+        const errorMessages = $('.asl-error-message');
+
         $('.asl-settings-table tbody tr td:nth-child(2) input[type="text"]').each(function() {
             $(this).on('blur', function() {
                 const errorMessage = $(this).siblings('.asl-error-message');
