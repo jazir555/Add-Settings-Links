@@ -71,6 +71,8 @@ class AddSettingsLinks {
         // 8. Display an aggregated notice about missing settings pages (single-site + network).
         add_action('admin_notices', [$this, 'maybe_display_admin_notices']);
         add_action('network_admin_notices', [$this, 'maybe_display_admin_notices']);
+        
+        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
     }
 
     /**
@@ -119,7 +121,23 @@ class AddSettingsLinks {
         }
         $this->cache_admin_menu_slugs();
     }
-
+    /**
+     * Enhanced Settings Detection Trait
+     * 
+     * Provides improved methods for detecting WordPress plugin settings pages
+     * through multiple detection strategies.
+     */
+    trait EnhancedSettingsDetection {
+    /**
+     * Common settings-related terms across multiple languages
+     */
+        private static $settings_terms = [
+            'en' => ['settings', 'options', 'preferences', 'configuration'],
+            'de' => ['einstellungen', 'optionen', 'konfiguration'],
+            'es' => ['ajustes', 'opciones', 'configuración'],
+            'fr' => ['paramètres', 'options', 'configuration'],
+            // Add more languages as needed
+    ];
     /**
      * Actually caches admin menu slugs (top-level + submenu) in a transient.
      */
@@ -738,6 +756,264 @@ class AddSettingsLinks {
                 error_log('[Add Settings Links] ' . $message);
             }
         }
+    }
+}
+
+    /**
+ * Enhanced Settings Detection Trait
+ * 
+ * Provides improved methods for detecting WordPress plugin settings pages
+ * through multiple detection strategies.
+ */
+trait EnhancedSettingsDetection {
+    /**
+     * Common settings-related terms across multiple languages
+     */
+    private static $settings_terms = [
+        'en' => ['settings', 'options', 'preferences', 'configuration'],
+        'de' => ['einstellungen', 'optionen', 'konfiguration'],
+        'es' => ['ajustes', 'opciones', 'configuración'],
+        'fr' => ['paramètres', 'options', 'configuration'],
+        // Add more languages as needed
+    ];
+
+    /**
+     * Find potential settings URLs using multiple detection strategies
+     *
+     * @param string $plugin_dir Plugin directory name
+     * @param string $plugin_basename Plugin basename
+     * @return array|false Array of discovered URLs or false if none found
+     */
+    private function find_settings_url(string $plugin_dir, string $plugin_basename) {
+        $found_urls = [];
+        
+        // 1. Check cached admin menu slugs (existing approach)
+        $menu_urls = $this->find_settings_in_admin_menu($plugin_dir, $plugin_basename);
+        if ($menu_urls) {
+            $found_urls = array_merge($found_urls, $menu_urls);
+        }
+
+        // 2. Static file analysis
+        $file_urls = $this->analyze_plugin_files($plugin_basename);
+        if ($file_urls) {
+            $found_urls = array_merge($found_urls, $file_urls);
+        }
+
+        // 3. Option table analysis
+        $option_urls = $this->analyze_options_table($plugin_dir, $plugin_basename);
+        if ($option_urls) {
+            $found_urls = array_merge($found_urls, $option_urls);
+        }
+
+        // 4. Hook analysis
+        $hook_urls = $this->analyze_registered_hooks($plugin_dir);
+        if ($hook_urls) {
+            $found_urls = array_merge($found_urls, $hook_urls);
+        }
+
+        return !empty($found_urls) ? array_unique($found_urls) : false;
+    }
+
+    /**
+     * Analyze plugin files for potential settings pages
+     *
+     * @param string $plugin_basename Plugin basename
+     * @return array|false Array of discovered URLs or false
+     */
+    private function analyze_plugin_files(string $plugin_basename): array|false {
+        $plugin_dir = WP_PLUGIN_DIR . '/' . dirname($plugin_basename);
+        if (!is_dir($plugin_dir)) {
+            return false;
+        }
+
+        $found_urls = [];
+        $files = $this->recursively_scan_directory($plugin_dir, ['php']);
+
+        foreach ($files as $file) {
+            // Skip vendor directories
+            if (strpos($file, '/vendor/') !== false) {
+                continue;
+            }
+
+            $content = file_get_contents($file);
+            if ($content === false) {
+                continue;
+            }
+
+            // Look for common settings page registration patterns
+            $patterns = [
+                'add_menu_page',
+                'add_options_page',
+                'add_submenu_page',
+                'register_setting',
+                'add_settings_section',
+                'settings_fields',
+                'options-general.php'
+            ];
+
+            foreach ($patterns as $pattern) {
+                if (strpos($content, $pattern) !== false) {
+                    // Extract potential URLs using regex
+                    if (preg_match_all('/[\'"]([^\'"]*(settings|options|config)[^\'"]*)[\'"]/', $content, $matches)) {
+                        foreach ($matches[1] as $match) {
+                            if ($this->is_valid_admin_url($match)) {
+                                $found_urls[] = admin_url($match);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return !empty($found_urls) ? array_unique($found_urls) : false;
+    }
+
+    /**
+     * Analyze options table for plugin-specific settings
+     *
+     * @param string $plugin_dir Plugin directory
+     * @param string $plugin_basename Plugin basename
+     * @return array|false Array of discovered URLs or false
+     */
+    private function analyze_options_table(string $plugin_dir, string $plugin_basename): array|false {
+        global $wpdb;
+        
+        $found_urls = [];
+        $plugin_prefix = str_replace('-', '_', sanitize_title($plugin_dir)) . '_';
+        
+        // Search for plugin-specific options
+        $options = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT option_name FROM {$wpdb->options} 
+                WHERE option_name LIKE %s 
+                OR option_name LIKE %s",
+                $wpdb->esc_like($plugin_prefix) . '%',
+                '%' . $wpdb->esc_like('_' . $plugin_dir) . '%'
+            )
+        );
+
+        if (!empty($options)) {
+            // If plugin has registered options, check for settings pages
+            $settings_patterns = array_merge(...array_values(self::$settings_terms));
+            
+            foreach ($settings_patterns as $pattern) {
+                $potential_url = 'admin.php?page=' . $plugin_dir . '-' . $pattern;
+                if ($this->is_valid_admin_url($potential_url)) {
+                    $found_urls[] = admin_url($potential_url);
+                }
+            }
+        }
+
+        return !empty($found_urls) ? array_unique($found_urls) : false;
+    }
+
+    /**
+     * Analyze registered hooks for settings-related callbacks
+     *
+     * @param string $plugin_dir Plugin directory
+     * @return array|false Array of discovered URLs or false
+     */
+    private function analyze_registered_hooks(string $plugin_dir): array|false {
+        global $wp_filter;
+        
+        $found_urls = [];
+        $settings_hooks = [
+            'admin_menu',
+            'admin_init',
+            'network_admin_menu',
+            'options_page'
+        ];
+
+        foreach ($settings_hooks as $hook) {
+            if (isset($wp_filter[$hook])) {
+                foreach ($wp_filter[$hook] as $priority => $callbacks) {
+                    foreach ($callbacks as $callback) {
+                        if (is_array($callback['function'])) {
+                            $class = is_object($callback['function'][0]) 
+                                ? get_class($callback['function'][0])
+                                : $callback['function'][0];
+                                
+                            if (stripos($class, $plugin_dir) !== false) {
+                                // Plugin has registered admin hooks, look for settings URLs
+                                $reflection = new ReflectionMethod($class, $callback['function'][1]);
+                                $content = file_get_contents($reflection->getFileName());
+                                
+                                if (preg_match_all('/[\'"]([^\'"]*(settings|options|config)[^\'"]*)[\'"]/', $content, $matches)) {
+                                    foreach ($matches[1] as $match) {
+                                        if ($this->is_valid_admin_url($match)) {
+                                            $found_urls[] = admin_url($match);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return !empty($found_urls) ? array_unique($found_urls) : false;
+    }
+
+    /**
+     * Recursively scan directory for files with specific extensions
+     *
+     * @param string $dir Directory path
+     * @param array $extensions Array of file extensions to look for
+     * @return array Array of file paths
+     */
+    private function recursively_scan_directory(string $dir, array $extensions): array {
+        $files = [];
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS)
+        );
+
+        foreach ($iterator as $file) {
+            if (in_array(strtolower(pathinfo($file, PATHINFO_EXTENSION)), $extensions, true)) {
+                $files[] = $file->getPathname();
+            }
+        }
+
+        return $files;
+    }
+public function enqueue_admin_assets($hook) {
+    if (strpos($hook, 'asl_settings') === false) {
+        return;
+    }
+
+    wp_enqueue_style(
+        'asl-admin-css',
+        plugin_dir_url(__FILE__) . 'css/asl-admin.css',
+        [],
+        '1.0.0'
+    );
+
+    wp_enqueue_script(
+        'asl-admin-js',
+        plugin_dir_url(__FILE__) . 'js/asl-admin.js',
+        ['jquery'],
+        '1.0.0',
+        true
+    );
+
+    // Localize script for translation strings
+    wp_localize_script('asl-admin-js', 'ASL_Settings', [
+        'invalid_url_message' => __('One or more URLs are invalid. Please ensure correct formatting.', 'add-settings-links'),
+    ]);
+    }
+
+    /**
+     * Validate if a given path could be a valid admin URL
+     *
+     * @param string $path Admin URL path
+     * @return bool Whether path could be valid
+     */
+    private function is_valid_admin_url(string $path): bool {
+        // Basic validation - could be expanded
+        return (
+            strpos($path, '.php') !== false ||
+            strpos($path, 'page=') !== false
+        ) && !preg_match('/[<>"\'&]/', $path);
     }
 }
 
