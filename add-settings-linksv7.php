@@ -366,22 +366,50 @@ trait ASL_EnhancedSettingsDetection
                 ? new \ReflectionMethod($classOrObject, $method)
                 : new \ReflectionMethod(get_class($classOrObject), $method);
 
-            $content = file_get_contents($reflection->getFileName());
-            if ($content && preg_match_all('/[\'"]([^\'"]*(settings|options|config)[^\'"]*)[\'"]/', $content, $matches)) {
-                foreach ($matches[1] as $match) {
-                    if ($this->is_valid_admin_url($match)) {
-                        $found[] = admin_url($match);
+            $file_path = $reflection->getFileName();
+
+            if (!$file_path || !file_exists($file_path) || !is_readable($file_path)) {
+                $this->log_debug("Cannot access the file for method {$method} in class " . get_class($classOrObject));
+                return [];
+            }
+
+            $content = @file_get_contents($file_path);
+
+            if ($content === false) {
+                $this->log_debug("Failed to read the file: {$file_path} for method {$method} in class " . get_class($classOrObject));
+                return [];
+            }
+
+            // Improved regex to target likely URL patterns more accurately
+            // This regex looks for URLs within quotes that include 'settings', 'options', or 'config' as a parameter value
+            if ($content && preg_match_all('/[\'"]admin\.php\?page=([\w\-]+)[\'"]/', $content, $matches)) {
+                foreach ($matches[0] as $index => $full_match) {
+                    $page_param = $matches[1][$index];
+                    $potential_url = 'admin.php?page=' . $page_param;
+                    if ($this->is_valid_admin_url($potential_url)) {
+                        $found[] = admin_url($potential_url);
                     }
                 }
+            } else {
+                $this->log_debug("No matching URLs found in the file: {$file_path} for method {$method}.");
             }
         } catch (\ReflectionException $e) {
             // Log the exception for debugging
             $this->log_debug('ReflectionException: ' . $e->getMessage());
+            return [];
+        } catch (\Exception $e) {
+            // Catch any other unexpected exceptions
+            $this->log_debug('Unexpected Exception in extract_urls_via_reflection: ' . $e->getMessage());
+            return [];
         }
 
         $found = array_unique($found);
-        set_transient($cache_key, $found, ASL_MENU_SLUGS_TRANSIENT_EXPIRATION);
-        $this->log_debug('Reflection URLs cached.');
+        if (!empty($found)) {
+            set_transient($cache_key, $found, ASL_MENU_SLUGS_TRANSIENT_EXPIRATION);
+            $this->log_debug('Reflection URLs cached.');
+        } else {
+            $this->log_debug('No valid URLs found to cache in reflection.');
+        }
 
         return $found;
     }
