@@ -48,13 +48,17 @@ if (!defined('ASL_PLUGIN_FILES_TRANSIENT_EXPIRATION')) {
  *
  * Provides improved methods for detecting WordPress plugin settings pages
  * through multiple detection strategies.
+ *
+ * @requires get_transient_key(string): string
+ * @requires cache_admin_menu_slugs(): void
+ * @requires log_debug(string): void
  */
 trait ASL_EnhancedSettingsDetection
 {
     /**
      * Common settings-related terms across multiple languages.
      */
-    private static $settings_terms = [
+    protected static $settings_terms = [
         'en' => ['settings', 'options', 'preferences', 'configuration'],
         'de' => ['einstellungen', 'optionen', 'konfiguration'],
         'es' => ['ajustes', 'opciones', 'configuración'],
@@ -112,7 +116,7 @@ trait ASL_EnhancedSettingsDetection
      * @param string $plugin_basename  Plugin basename.
      * @return string[]|false          Array of discovered URLs or false if none found.
      */
-    private function extended_find_settings_url(string $plugin_dir, string $plugin_basename)
+    private function extended_find_settings_url(string $plugin_dir, string $plugin_basename): array
     {
         $found_urls = [];
         $menu_urls = [];
@@ -619,7 +623,8 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             /**
              * Enqueue admin assets with proper version and dependency handling
              */
-            if ($hook !== 'settings_page_asl_settings') {
+            $valid_hooks = ['settings_page_asl_settings', 'plugins.php'];
+            if (!in_array($hook, $valid_hooks, true)) {
                 return;
             }
 
@@ -627,7 +632,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 return;
             }
 
-            $plugin_version = self::VERSION; // Use the class constant
+            $plugin_version = self::VERSION; // Use the class constant for versioning
             $min_suffix = defined('SCRIPT_DEBUG') && SCRIPT_DEBUG ? '' : '.min';
 
             // Enqueue CSS
@@ -657,6 +662,8 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     $plugin_version,
                     true
                 );
+
+                // Localize script for AJAX and dynamic data
                 wp_localize_script(
                     'asl-admin-js',
                     'ASL_Settings',
@@ -683,11 +690,17 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
         {
             $potential_slugs = [];
 
+            // Extract the directory name from plugin_basename
+            $plugin_dir_name = dirname($plugin_basename);
+            if ($plugin_dir_name === '.') {
+                $plugin_dir_name = basename($plugin_basename, '.php');
+            }
+
             // Use settings-related terms to generate potential slugs
-            foreach (self::$settings_terms as $lang => $terms) {
+            foreach (static::$settings_terms as $lang => $terms) {
                 foreach ($terms as $term) {
                     $potential_slugs[] = $plugin_dir . '-' . $term;
-                    $potential_slugs[] = $plugin_basename . '-' . $term;
+                    $potential_slugs[] = $plugin_dir_name . '-' . $term; // Use directory name instead of full basename
                 }
             }
 
@@ -956,7 +969,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 );
                 array_unshift($links, $html);
             } else {
-                // Multiple settings URLs, add as an accessible dropdown
+                // Multiple settings URLs, add as an accessible dropdown menu
                 $dropdown_id = 'asl-dropdown-' . sanitize_title_with_dashes($plugin_name) . '-' . uniqid();
                 $dropdown = '<div class="dropdown" role="menu" aria-haspopup="true" aria-expanded="false">';
                 $dropdown .= sprintf(
@@ -987,6 +1000,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
 
             return $links;
         }
+
         public function manual_overrides_field_callback(): void
         {
             $manual_overrides = get_option('asl_manual_overrides', []);
@@ -994,16 +1008,22 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             ?>
             <input
                     type="text"
-                    id="asl_plugin_search"
+                    class="asl-plugin-search"
                     placeholder="<?php esc_attr_e('Search Plugins...', 'add-settings-links'); ?>"
-                    style="width:100%; margin-bottom: 10px;"
-                    onkeyup="aslFilterPlugins()"
             />
             <table class="widefat fixed asl-settings-table" cellspacing="0">
                 <thead>
                 <tr>
-                    <th><?php esc_html_e('Plugin', 'add-settings-links'); ?></th>
-                    <th><?php esc_html_e('Manual Settings URLs (comma-separated)', 'add-settings-links'); ?></th>
+                    <th>
+                        <?php esc_html_e('Plugin', 'add-settings-links'); ?>
+                        <!-- Optional Tooltip -->
+                        <span class="asl-tooltip" title="<?php esc_attr_e('Name of the installed plugin.', 'add-settings-links'); ?>">&#9432;</span>
+                    </th>
+                    <th>
+                        <?php esc_html_e('Manual Settings URLs (comma-separated)', 'add-settings-links'); ?>
+                        <!-- Optional Tooltip -->
+                        <span class="asl-tooltip" title="<?php esc_attr_e('Enter one or multiple settings URLs separated by commas.', 'add-settings-links'); ?>">&#9432;</span>
+                    </th>
                 </tr>
                 </thead>
                 <tbody id="asl-plugins-table-body">
@@ -1015,16 +1035,17 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     $existing_str = implode(',', $existing);
                     ?>
                     <tr class="asl-plugin-row">
-                        <td><?php echo esc_html($plugin_data['Name']); ?></td>
-                        <td>
+                        <td data-label="<?php esc_attr_e('Plugin', 'add-settings-links'); ?>">
+                            <?php echo esc_html($plugin_data['Name']); ?>
+                        </td>
+                        <td data-label="<?php esc_attr_e('Manual Settings URLs (comma-separated)', 'add-settings-links'); ?>">
                             <input
                                     type="text"
                                     name="asl_manual_overrides[<?php echo esc_attr($plugin_file_safe); ?>]"
                                     value="<?php echo esc_attr($existing_str); ?>"
-                                    style="width:100%;"
-                                    aria-describedby="asl_manual_overrides_description_<?php echo esc_attr($plugin_file_safe); ?>"
-                                    class="asl-settings-input"
+                                    class="asl-settings-input full-width-input"
                                     data-plugin="<?php echo esc_attr($plugin_file_safe); ?>"
+                                    aria-describedby="asl_manual_overrides_description_<?php echo esc_attr($plugin_file_safe); ?>"
                             />
                             <p
                                     class="description"
@@ -1035,104 +1056,12 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                                     'add-settings-links'
                                 ); ?>
                             </p>
-                            <span class="asl-error-message" style="color: red; display: none;"></span>
+                            <span class="asl-error-message"></span>
                         </td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
             </table>
-
-            <script>
-                function aslFilterPlugins() {
-                    var input, filter, table, tr, td, i, txtValue;
-                    input = document.getElementById("asl_plugin_search");
-                    filter = input.value.toLowerCase();
-                    table = document.getElementById("asl-plugins-table-body");
-                    tr = table.getElementsByClassName("asl-plugin-row");
-                    for (i = 0; i < tr.length; i++) {
-                        td = tr[i].getElementsByTagName("td")[0];
-                        if (td) {
-                            txtValue = td.textContent || td.innerText;
-                            if (txtValue.toLowerCase().indexOf(filter) > -1) {
-                                tr[i].style.display = "";
-                            } else {
-                                tr[i].style.display = "none";
-                            }
-                        }
-                    }
-                }
-
-                jQuery(document).ready(function($){
-                    // Debounce function to limit the rate of AJAX calls
-                    function debounce(func, wait) {
-                        let timeout;
-                        return function(...args) {
-                            const later = () => {
-                                clearTimeout(timeout);
-                                func.apply(this, args);
-                            };
-                            clearTimeout(timeout);
-                            timeout = setTimeout(later, wait);
-                        };
-                    }
-
-                    // Function to validate URLs
-                    function validateURLs(input) {
-                        var urls = input.val().trim().split(',');
-                        var plugin = input.data('plugin');
-                        var errorMessage = '';
-                        var ajaxRequests = [];
-
-                        urls.forEach(function(single_url){
-                            single_url = single_url.trim();
-                            if(single_url === ''){
-                                return;
-                            }
-                            ajaxRequests.push($.ajax({
-                                url: ASL_Settings.ajax_url,
-                                method: 'POST',
-                                data: {
-                                    action: 'asl_validate_url',
-                                    nonce: ASL_Settings.nonce,
-                                    url: single_url
-                                }
-                            }));
-                        });
-
-                        if(ajaxRequests.length === 0){
-                            input.siblings('.asl-error-message').text('').hide();
-                            return;
-                        }
-
-                        $.when.apply($, ajaxRequests).done(function(){
-                            var responses = arguments;
-                            var all_valid = true;
-                            // Handle multiple responses
-                            if(ajaxRequests.length === 1){
-                                responses = [arguments];
-                            }
-                            $.each(responses, function(index, response){
-                                if(response[0].success === false){
-                                    all_valid = false;
-                                    errorMessage += response[0].data.message + ' ';
-                                }
-                            });
-                            if(all_valid){
-                                input.siblings('.asl-error-message').text('').hide();
-                            } else {
-                                input.siblings('.asl-error-message').text(errorMessage.trim()).show();
-                            }
-                        }).fail(function(){
-                            input.siblings('.asl-error-message').text(ASL_Settings.error_validating_url).show();
-                        });
-                    }
-
-                    // Attach debounced validation to blur event
-                    $('.asl-settings-input').on('blur', debounce(function(){
-                        validateURLs($(this));
-                    }, 300)); // 300ms debounce delay
-                });
-            </script>
             <?php
         }
 
@@ -1386,9 +1315,16 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     $network_plugins = get_site_option('active_sitewide_plugins', []);
                     foreach ($network_plugins as $plugin_file => $timestamp) {
                         if (!isset($cached_plugins[$plugin_file])) {
-                            $plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_file);
-                            if ($plugin_data && !empty($plugin_data['Name'])) {
-                                $cached_plugins[$plugin_file] = $plugin_data;
+                            $plugin_path = WP_PLUGIN_DIR . '/' . $plugin_file;
+                            if (file_exists($plugin_path) && is_readable($plugin_path)) {
+                                $plugin_data = get_plugin_data($plugin_path);
+                                if ($plugin_data && !empty($plugin_data['Name'])) {
+                                    $cached_plugins[$plugin_file] = $plugin_data;
+                                } else {
+                                    $this->log_debug("Failed to retrieve plugin data for network-activated plugin: {$plugin_file}");
+                                }
+                            } else {
+                                $this->log_debug("Plugin file does not exist or is not readable: {$plugin_path}");
                             }
                         }
                     }
@@ -1425,13 +1361,24 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
         {
             if (!empty($this->missing_settings)) {
                 $class   = 'notice notice-warning is-dismissible';
-                $plugins = implode(', ', array_map('esc_html', $this->missing_settings));
+                $plugin_names = [];
+                $all_plugins = $this->get_all_plugins();
+
+                foreach ($this->missing_settings as $plugin_basename) {
+                    if (isset($all_plugins[$plugin_basename]['Name'])) {
+                        $plugin_names[] = $all_plugins[$plugin_basename]['Name'];
+                    } else {
+                        $plugin_names[] = esc_html($plugin_basename);
+                    }
+                }
+
+                $plugins = implode(', ', array_map('esc_html', $plugin_names));
                 $current_screen = get_current_screen();
                 $is_network = is_network_admin();
 
                 $msg = sprintf(
                     __('Add Settings Links: No recognized settings URL found for the following plugins: %s.', 'add-settings-links'),
-                    '<strong>' . esc_html($plugins) . '</strong>'
+                    '<strong>' . $plugins . '</strong>'
                 );
 
                 // Optionally, customize the message based on context
