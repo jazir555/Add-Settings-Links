@@ -1,0 +1,59 @@
+name: Build and attach releases
+
+# Release name must match exactly the plugin base file's version.
+#
+# Requires SVN_PASSWORD and SVN_USERNAME secrets.
+# @see https://cli.github.com/manual/gh_secret_set
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        php: [ '7.4' ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Install PHP
+        uses: shivammathur/setup-php@2.11.0
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer, cs2pr
+          extensions: zip
+
+      - name: Run composer install
+        continue-on-error: true
+        run: composer install
+
+      - name: Create plugin archive
+        id: create-plugin-archive
+        run: |
+          composer create-plugin-archive
+          echo "DIST_ARCHIVE_ABSOLUTE_FILEPATH=$(pwd)/$(ls -Art dist-archive/*.zip | tail -n 1)" >> $GITHUB_OUTPUT;
+
+      - uses: meeDamian/github-release@2.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: ${{ steps.create-plugin-archive.outputs.DIST_ARCHIVE_ABSOLUTE_FILEPATH }}
+          gzip: false
+          allow_override: true
+
+      - name: Unzip release archive for SVN deployment
+        run: unzip ${{ steps.create-plugin-archive.outputs.DIST_ARCHIVE_ABSOLUTE_FILEPATH }}
+  
+      - name: WordPress Plugin Deploy
+        uses: 10up/action-wordpress-plugin-deploy@stable
+        if: ${{ secrets.SVN_PASSWORD && secrets.SVN_USERNAME }}
+        env:
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          BUILD_DIR: ./${{ env.PLUGIN_SLUG }}
