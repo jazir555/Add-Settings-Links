@@ -25,11 +25,17 @@
         ],
         "check": [
             "phpcs . --standard=phpcs.xml -s"
+        ],
+        "create-plugin-archive": [
+            "if [ -z \"$(command -v wp)\" ]; then echo \"Please wp-cli and dist-archive-command'.\"; exit 1; fi;",
+            "wp i18n make-pot . languages/add-settings-links.pot --domain=add-settings-links --include=add-settings-links.php",
+            "wp dist-archive . ./dist-archive --plugin-dirname=add-settings-links --create-target-dir"
         ]
     },
     "scripts-descriptions": {
         "cs-fix-changes": "Automatically fix coding standards issues in files changed since the main branch.",
         "cs-fix": "Automatically fix all coding standards issues where possible.",
-        "check": "Check files against coding standards."
+        "check": "Check files against coding standards.",
+        "create-plugin-archive": "Create a zip archive of the plugin for distribution."
     }
 }
