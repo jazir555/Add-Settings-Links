@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Add Settings Links
  * Description: Adds direct links to the settings pages for all plugins that do not have one (including multisite/network admin support).
- * Version: v8
+ * Version: 1.7.3
  * Author: Jazir5
  * Text Domain: add-settings-links
  * Domain Path: /languages
@@ -29,13 +29,20 @@ if (version_compare(PHP_VERSION, '7.4', '<')) {
  */
 if (!defined('ASL_MENU_SLUGS_TRANSIENT')) {
     define('ASL_MENU_SLUGS_TRANSIENT', 'asl_cached_admin_menu_slugs');
+}
+if (!defined('ASL_MENU_SLUGS_TRANSIENT_EXPIRATION')) {
     define('ASL_MENU_SLUGS_TRANSIENT_EXPIRATION', 12 * HOUR_IN_SECONDS);
 }
+
 if (!defined('ASL_CACHED_PLUGINS_TRANSIENT')) {
     define('ASL_CACHED_PLUGINS_TRANSIENT', 'asl_cached_plugins');
+}
+if (!defined('ASL_CACHED_PLUGINS_TRANSIENT_EXPIRATION')) {
     define('ASL_CACHED_PLUGINS_TRANSIENT_EXPIRATION', DAY_IN_SECONDS);
 }
-
+if (!defined('ASL_PLUGIN_FILES_TRANSIENT_EXPIRATION')) {
+    define('ASL_PLUGIN_FILES_TRANSIENT_EXPIRATION', 24 * HOUR_IN_SECONDS); // Example: 24 hours
+}
 /**
  * Enhanced Settings Detection Trait
  *
@@ -202,7 +209,7 @@ trait ASL_EnhancedSettingsDetection
         }
 
         $found_urls = array_unique($found_urls);
-        set_transient($transient_key, $found_urls, ASL_MENU_SLUGS_TRANSIENT_EXPIRATION);
+        set_transient($transient_key, $found_urls, \ASL_PLUGIN_FILES_TRANSIENT_EXPIRATION);
         $this->log_debug('Plugin file analysis cached.');
 
         return $found_urls;
@@ -411,6 +418,13 @@ trait ASL_EnhancedSettingsDetection
                 }
             } else {
                 $this->log_debug("No matching URLs found in the file: {$file_path} for method {$method}.");
+
+                // Utilize the fallback method
+                $fallback_urls = $this->fallback_find_settings_url($classOrObject, $method);
+                if (!empty($fallback_urls)) {
+                    $found = array_merge($found, $fallback_urls);
+                    $this->log_debug("Fallback found URLs: " . implode(', ', $fallback_urls));
+                }
             }
         } catch (\ReflectionException $e) {
             // Log the exception for debugging
@@ -540,7 +554,6 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
 
             // 2. Conditionally cache admin menu slugs (single-site or network).
             add_action('admin_menu', [$this, 'maybe_cache_admin_menu_slugs'], 9999);
-            add_action('admin_post_asl_save_settings', [$this, 'verify_nonce']);
 
             // 3. Dynamically add plugin action links filters for all plugins.
             add_action('admin_init', [$this, 'add_dynamic_plugin_action_links']);
@@ -582,19 +595,6 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 add_filter('plugin_action_links_' . $plugin_file, function($links) use ($plugin_file, $plugin_data) {
                     return $this->maybe_add_settings_links($links, $plugin_file, $plugin_data);
                 }, 20, 1); // Set accepted arguments to 1
-            }
-        }
-        /**
-         * Verify nonce for form submissions
-         */
-        public function verify_nonce(): void
-        {
-            if (
-                isset($_POST['_wpnonce']) &&
-                isset($_POST['option_page']) &&
-                $_POST['option_page'] === 'asl_settings_group'
-            ) {
-                check_admin_referer('asl_settings_group-options');
             }
         }
         /**
@@ -1203,8 +1203,8 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          */
         public function clear_cached_menu_slugs(): void
         {
-            $transient_key_slugs = $this->get_transient_key(ASL_MENU_SLUGS_TRANSIENT);
-            $transient_key_plugins = $this->get_transient_key(ASL_CACHED_PLUGINS_TRANSIENT);
+            $transient_key_slugs = $this->get_transient_key(\ASL_MENU_SLUGS_TRANSIENT);
+            $transient_key_plugins = $this->get_transient_key(\ASL_CACHED_PLUGINS_TRANSIENT);
             delete_transient($transient_key_slugs);
             delete_transient($transient_key_plugins);
             $this->log_debug('Cleared cached menu slugs and plugin list transient.');
@@ -1279,6 +1279,8 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 return [];
             }
             $sanitized = [];
+            $home_url = parse_url(home_url());
+
             foreach ($input as $plugin_file => $raw_value) {
                 $plugin_file_safe = sanitize_text_field($plugin_file);
                 $url_candidates = array_map('trim', explode(',', (string)$raw_value));
@@ -1288,9 +1290,12 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     if (!empty($candidate)) {
                         // Check if it's an absolute URL
                         if (filter_var($candidate, FILTER_VALIDATE_URL)) {
-                            // Ensure the URL points to an admin page if it's absolute
+                            // Ensure the URL points to the site's home host
                             $parsed_url = parse_url($candidate);
-                            if (isset($parsed_url['host']) && strpos($parsed_url['host'], $_SERVER['HTTP_HOST']) !== false) {
+                            if (
+                                isset($parsed_url['host'], $home_url['host']) &&
+                                strcasecmp($parsed_url['host'], $home_url['host']) === 0
+                            ) {
                                 $valid_urls[] = $candidate;
                             }
                         }
