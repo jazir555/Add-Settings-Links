@@ -254,7 +254,7 @@ trait ASL_EnhancedSettingsDetection
 
         // Construct the SQL query with dynamic placeholders
         $placeholders = implode(' OR option_name LIKE ', array_fill(0, count($like_patterns), '%s'));
-        $query = "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE " . $placeholders;
+        $query = "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE " . implode(' OR option_name LIKE ', array_fill(0, count($like_patterns), '%s'));
 
         // Execute the query
         $options = $wpdb->get_results(
@@ -493,6 +493,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
 
             // 2. Conditionally cache admin menu slugs (single-site or network).
             add_action('admin_menu', [$this, 'maybe_cache_admin_menu_slugs'], 9999);
+            add_action('admin_post_asl_save_settings', [$this, 'verify_nonce']);
 
             // 3. Dynamically add plugin action links filters for all plugins.
             add_action('admin_init', [$this, 'add_dynamic_plugin_action_links']);
