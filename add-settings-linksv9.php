@@ -361,6 +361,46 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             }
             return add_query_arg('page', $slug, admin_url('admin.php'));
         }
+        private function is_valid_admin_url(string $path): bool
+        {
+            // Allow only specific admin pages, extendable via filter
+            $allowed_pages = apply_filters('asl_allowed_admin_pages', [
+                'admin.php',
+                'options-general.php',
+                'tools.php',
+                'settings_page_asl_settings',
+                // Add more known admin pages as needed
+            ]);
+
+            // Parse the URL
+            $parsed = parse_url($path);
+            if (!$parsed || !isset($parsed['path'])) {
+                return false;
+            }
+
+            $page = basename($parsed['path']);
+            if (!in_array($page, $allowed_pages, true)) {
+                return false;
+            }
+
+            // Ensure no disallowed characters
+            if (preg_match('/[<>"\'&]/', $path)) {
+                return false;
+            }
+
+            // Optionally, enforce specific query parameters
+            if (isset($parsed['query'])) {
+                parse_str($parsed['query'], $query_params);
+                if (isset($query_params['page'])) {
+                    // Validate the 'page' parameter format
+                    if (!preg_match('/^[\w\-]+$/', $query_params['page'])) {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
 
         /**
          * Possibly add or skip plugin settings links on single-site or network plugins pages.
@@ -434,12 +474,13 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     if (!$url) {
                         continue;
                     }
-                    // Validate and sanitize the URL
-                    if (strpos($url, 'http') === 0) {
-                        $full_url = esc_url_raw($url);
+                    if ($this->is_valid_admin_url($url) && !$this->link_already_exists($links, $url)) {
+                        $links = $this->prepend_settings_link($links, [$url], $plugin_data['Name']);
+                        $settings_added = true;
                     } else {
-                        $full_url = esc_url($url); // Changed from admin_url($url) to esc_url($url) since $url is already full URL
+                        $this->log_debug("Invalid detected URL for plugin {$plugin_data['Name']}: {$url}");
                     }
+
 
                     if ($this->is_valid_admin_url($url) && !$this->link_already_exists($links, $url)) {
                         $links = $this->prepend_settings_link($links, [$url], $plugin_data['Name']);
@@ -954,73 +995,6 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     'Specify custom settings page URLs for plugins with multiple or unconventional settings pages.',
                     'add-settings-links'
                 ) . '</p>';
-        }
-
-        /**
-         * Renders the manual overrides field.
-         */
-        public function manual_overrides_field_callback(): void
-        {
-            $manual_overrides = get_option('asl_manual_overrides', []);
-            $plugins          = $this->get_all_plugins();
-            ?>
-            <input
-                    type="text"
-                    class="asl-plugin-search"
-                    placeholder="<?php esc_attr_e('Search Plugins...', 'add-settings-links'); ?>"
-            />
-            <table class="widefat fixed asl-settings-table" cellspacing="0">
-                <thead>
-                <tr>
-                    <th>
-                        <?php esc_html_e('Plugin', 'add-settings-links'); ?>
-                        <!-- Optional Tooltip -->
-                        <span class="asl-tooltip" title="<?php esc_attr_e('Name of the installed plugin.', 'add-settings-links'); ?>">&#9432;</span>
-                    </th>
-                    <th>
-                        <?php esc_html_e('Manual Settings URLs (comma-separated)', 'add-settings-links'); ?>
-                        <!-- Optional Tooltip -->
-                        <span class="asl-tooltip" title="<?php esc_attr_e('Enter one or multiple settings URLs separated by commas.', 'add-settings-links'); ?>">&#9432;</span>
-                    </th>
-                </tr>
-                </thead>
-                <tbody id="asl-plugins-table-body">
-                <?php foreach ($plugins as $plugin_file => $plugin_data) :
-                    $plugin_file_safe = sanitize_text_field($plugin_file);
-                    $existing = isset($manual_overrides[$plugin_file_safe])
-                        ? (array)$manual_overrides[$plugin_file_safe]
-                        : [];
-                    $existing_str = implode(',', $existing);
-                    ?>
-                    <tr class="asl-plugin-row">
-                        <td data-label="<?php esc_attr_e('Plugin', 'add-settings-links'); ?>">
-                            <?php echo esc_html($plugin_data['Name']); ?>
-                        </td>
-                        <td data-label="<?php esc_attr_e('Manual Settings URLs (comma-separated)', 'add-settings-links'); ?>">
-                            <input
-                                    type="text"
-                                    name="asl_manual_overrides[<?php echo esc_attr($plugin_file_safe); ?>]"
-                                    value="<?php echo esc_attr($existing_str); ?>"
-                                    class="asl-settings-input full-width-input"
-                                    data-plugin="<?php echo esc_attr($plugin_file_safe); ?>"
-                                    aria-describedby="asl_manual_overrides_description_<?php echo esc_attr($plugin_file_safe); ?>"
-                            />
-                            <p
-                                    class="description"
-                                    id="asl_manual_overrides_description_<?php echo esc_attr($plugin_file_safe); ?>"
-                            >
-                                <?php esc_html_e(
-                                    'Enter one or multiple settings URLs separated by commas.',
-                                    'add-settings-links'
-                                ); ?>
-                            </p>
-                            <span class="asl-error-message"></span>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-            <?php
         }
 
         /**
