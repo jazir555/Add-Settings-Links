@@ -1,0 +1,40 @@
+name: Run PHP CodeSniffer
+
+# Run PHPCBF to fix changes then annotate PHPCS in the PR.
+# NB: Pull requests from forks do not have access to repository secrets so cannot commit changes.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '**.php'
+
+jobs:
+  php-codesniffer:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        php: [ '7.4' ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer, cs2pr
+
+      - name: Run composer install
+        run: composer install
+
+      - name: Run PHPCBF to fix what it can
+        continue-on-error: true # This will error when there are coding standard issues, but we don't care right now.
+        run: vendor/bin/phpcbf
+
+      - name: Run PHPCS to add annotations to the code
+        continue-on-error: true
+        run: vendor/bin/phpcs -q -n --report=checkstyle | cs2pr
