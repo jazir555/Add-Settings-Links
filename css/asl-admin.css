@@ -23,12 +23,6 @@ input[aria-invalid="true"] {
     outline: 2px solid #4CAF50;
 }
 
-/* Additional Class for Full Width Inputs */
-.full-width-input {
-    width: 100%;
-    box-sizing: border-box;
-}
-
 /* Dropdown Styles */
 .dropdown {
     position: relative;
