@@ -8,10 +8,12 @@
     },
     "config": {
         "allow-plugins": {
-            "composer/installers": true
+            "composer/installers": true,
+            "dealerdirect/phpcodesniffer-composer-installer": true
         }
     },
     "require-dev": {
-        "wpackagist-plugin/debloat": "^1.2"
+        "wpackagist-plugin/debloat": "^1.2",
+        "wp-coding-standards/wpcs": "^3.1"
     }
 }
