@@ -537,6 +537,12 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          */
         const VERSION = '1.7.3';
         /**
+         * Singleton instance.
+         *
+         * @var self|null
+         */
+        private static $instance = null;
+        /**
          * List of plugin basenames that have no recognized settings page.
          * We show them in one aggregated notice on relevant screens.
          *
@@ -547,7 +553,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
         /**
          * Constructor: sets up WordPress hooks and filters for single-site + network usage.
          */
-        public function __construct()
+        private function __construct()
         {
             // 1. Load plugin text domain for translations.
             add_action('plugins_loaded', [$this, 'load_textdomain']);
@@ -580,7 +586,18 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             // 11. Handle AJAX requests for URL validation
             add_action('wp_ajax_asl_validate_url', [$this, 'ajax_validate_url']);
         }
-
+        /**
+         * Retrieves the singleton instance.
+         *
+         * @return self
+         */
+        public static function get_instance(): self
+        {
+            if (self::$instance === null) {
+                self::$instance = new self();
+            }
+            return self::$instance;
+        }
         /**
          * Dynamically add plugin action links filters for all installed plugins.
          */
@@ -845,8 +862,13 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 // Define the settings URL for this plugin
                 $settings_url = admin_url('options-general.php?page=asl_settings');
 
-                // Define the label for the settings link
-                $label = __('Settings', 'add-settings-links');
+                // Check if the settings link already exists
+                foreach ($links as $link_html) {
+                    if (strpos($link_html, $settings_url) !== false) {
+                        // Settings link already exists, do not add again
+                        return $links;
+                    }
+                }
 
                 // Prepend the settings link using the existing method
                 $links = $this->prepend_settings_link($links, [$settings_url], $plugin_data['Name']);
@@ -959,12 +981,29 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 return $links;
             }
 
-            if (count($settings_urls) === 1) {
+            // Normalize existing links to prevent duplication
+            $existing_urls = [];
+            foreach ($links as $link_html) {
+                if (preg_match('/href=[\'"]([^\'"]+)[\'"]/', $link_html, $matches)) {
+                    $existing_urls[] = esc_url_raw($matches[1]);
+                }
+            }
+
+            // Filter out URLs that already exist
+            $new_settings_urls = array_filter($settings_urls, function($url) use ($existing_urls) {
+                return !in_array(esc_url_raw($url), $existing_urls, true);
+            });
+
+            if (empty($new_settings_urls)) {
+                return $links; // No new links to add
+            }
+
+            if (count($new_settings_urls) === 1) {
                 // Single settings URL, add as a single link
                 $label = !empty($plugin_name) ? sprintf(__('Settings for %s', 'add-settings-links'), $plugin_name) : __('Settings', 'add-settings-links');
                 $html = sprintf(
                     '<a href="%s">%s</a>',
-                    esc_url($settings_urls[0]),
+                    esc_url($new_settings_urls[0]),
                     esc_html($label)
                 );
                 array_unshift($links, $html);
@@ -983,7 +1022,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     esc_attr($dropdown_id),
                     esc_attr($dropdown_id)
                 );
-                foreach ($settings_urls as $index => $url) {
+                foreach ($new_settings_urls as $index => $url) {
                     $label = sprintf(__('Settings %d', 'add-settings-links'), $index + 1);
                     if (!empty($plugin_name)) {
                         $label = sprintf(__('Settings for %s %d', 'add-settings-links'), $plugin_name, $index + 1);
@@ -1424,7 +1463,6 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
         }
     }
 
-    // Instantiate once on load
-    new ASL_AddSettingsLinks();
-
+    // Instantiate the singleton instance
+    ASL_AddSettingsLinks::get_instance();
 } // End if class_exists
