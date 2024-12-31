@@ -840,8 +840,17 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          */
         public function maybe_add_settings_links(array $links, string $plugin_file, array $plugin_data): array
         {
-            // Prevent adding settings link to the plugin itself
+            // Check if the plugin is itself
             if ($plugin_file === plugin_basename(__FILE__)) {
+                // Define the settings URL for this plugin
+                $settings_url = admin_url('options-general.php?page=asl_settings');
+
+                // Define the label for the settings link
+                $label = __('Settings', 'add-settings-links');
+
+                // Prepend the settings link using the existing method
+                $links = $this->prepend_settings_link($links, [$settings_url], $plugin_data['Name']);
+
                 return $links;
             }
 
