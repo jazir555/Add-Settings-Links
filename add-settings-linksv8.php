@@ -438,7 +438,7 @@ trait ASL_EnhancedSettingsDetection
 
         $found = array_unique($found);
         if (!empty($found)) {
-            set_transient($cache_key, $found, \ASL_MENU_SLUGS_TRANSIENT_EXPIRATION);
+            set_transient($cache_key, $found, \ASL_PLUGIN_FILES_TRANSIENT_EXPIRATION);
             $this->log_debug('Reflection URLs cached.');
         } else {
             $this->log_debug('No valid URLs found to cache in reflection.');
@@ -490,6 +490,8 @@ trait ASL_EnhancedSettingsDetection
         $allowed_pages = apply_filters('asl_allowed_admin_pages', [
             'admin.php',
             'options-general.php',
+            'tools.php',
+            'settings_page_asl_settings',
             // Add more known admin pages as needed
         ]);
 
@@ -535,7 +537,10 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
     class ASL_AddSettingsLinks
     {
         use ASL_EnhancedSettingsDetection; // Incorporate the trait here
-
+        /**
+         * Plugin version.
+         */
+        const VERSION = '1.7.3';
         /**
          * List of plugin basenames that have no recognized settings page.
          * We show them in one aggregated notice on relevant screens.
@@ -609,11 +614,6 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             );
         }
 
-        /**
-         * Enqueue admin-specific scripts and styles.
-         *
-         * @param string $hook The current admin page.
-         */
         public function enqueue_admin_assets(string $hook): void
         {
             /**
@@ -627,7 +627,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 return;
             }
 
-            $plugin_version = '1.7.3'; // Match plugin version
+            $plugin_version = self::VERSION; // Use the class constant
             $min_suffix = defined('SCRIPT_DEBUG') && SCRIPT_DEBUG ? '' : '.min';
 
             // Enqueue CSS
@@ -1063,44 +1063,74 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 }
 
                 jQuery(document).ready(function($){
-                    $('.asl-settings-input').on('blur', function(){
-                        var input = $(this);
-                        var url = input.val().trim();
+                    // Debounce function to limit the rate of AJAX calls
+                    function debounce(func, wait) {
+                        let timeout;
+                        return function(...args) {
+                            const later = () => {
+                                clearTimeout(timeout);
+                                func.apply(this, args);
+                            };
+                            clearTimeout(timeout);
+                            timeout = setTimeout(later, wait);
+                        };
+                    }
+
+                    // Function to validate URLs
+                    function validateURLs(input) {
+                        var urls = input.val().trim().split(',');
                         var plugin = input.data('plugin');
-                        if(url === '') {
-                            input.siblings('.asl-error-message').text('').hide();
-                            return;
-                        }
-                        var urls = url.split(',');
-                        var all_valid = true;
+                        var errorMessage = '';
+                        var ajaxRequests = [];
+
                         urls.forEach(function(single_url){
                             single_url = single_url.trim();
                             if(single_url === ''){
                                 return;
                             }
-                            $.ajax({
+                            ajaxRequests.push($.ajax({
                                 url: ASL_Settings.ajax_url,
                                 method: 'POST',
                                 data: {
                                     action: 'asl_validate_url',
                                     nonce: ASL_Settings.nonce,
                                     url: single_url
-                                },
-                                success: function(response){
-                                    if(response.success){
-                                        input.siblings('.asl-error-message').text('').hide();
-                                    } else {
-                                        all_valid = false;
-                                        input.siblings('.asl-error-message').text(response.data.message).show();
-                                    }
-                                },
-                                error: function(){
+                                }
+                            }));
+                        });
+
+                        if(ajaxRequests.length === 0){
+                            input.siblings('.asl-error-message').text('').hide();
+                            return;
+                        }
+
+                        $.when.apply($, ajaxRequests).done(function(){
+                            var responses = arguments;
+                            var all_valid = true;
+                            // Handle multiple responses
+                            if(ajaxRequests.length === 1){
+                                responses = [arguments];
+                            }
+                            $.each(responses, function(index, response){
+                                if(response[0].success === false){
                                     all_valid = false;
-                                    input.siblings('.asl-error-message').text(ASL_Settings.error_validating_url).show();
+                                    errorMessage += response[0].data.message + ' ';
                                 }
                             });
+                            if(all_valid){
+                                input.siblings('.asl-error-message').text('').hide();
+                            } else {
+                                input.siblings('.asl-error-message').text(errorMessage.trim()).show();
+                            }
+                        }).fail(function(){
+                            input.siblings('.asl-error-message').text(ASL_Settings.error_validating_url).show();
                         });
-                    });
+                    }
+
+                    // Attach debounced validation to blur event
+                    $('.asl-settings-input').on('blur', debounce(function(){
+                        validateURLs($(this));
+                    }, 300)); // 300ms debounce delay
                 });
             </script>
             <?php
