@@ -10,20 +10,6 @@
     font-size: 0.9em;
     color: #d9534f; /* Bootstrap's red color for errors */
     display: none;
-}
-.dropdown {
-    position: relative;
-    display: inline-block;
-}
-.asl-tooltip {
-    margin-left: 5px;
-    cursor: pointer;
-    color: #555;
-}
-.asl-error-message {
-    color: red;
-    display: none;
-    font-size: 0.9em;
     margin-top: 5px;
 }
 
@@ -36,16 +22,11 @@ input[aria-invalid="true"] {
 .asl-settings-table tbody tr td:nth-child(2) input[type="text"]:focus {
     outline: 2px solid #4CAF50;
 }
-.asl-tooltip:hover::after {
-    content: attr(title);
-    position: absolute;
-    background-color: #333;
-    color: #fff;
-    padding: 5px 10px;
-    border-radius: 4px;
-    white-space: nowrap;
-    transform: translateX(-50%);
-    z-index: 1000;
+
+/* Dropdown Styles */
+.dropdown {
+    position: relative;
+    display: inline-block;
 }
 
 .dropbtn {
@@ -74,13 +55,16 @@ input[aria-invalid="true"] {
     display: block;
 }
 
-.dropdown-content a:hover {background-color: #f1f1f1}
+.dropdown-content a:hover {
+    background-color: #f1f1f1;
+}
 
-.dropdown:hover .dropdown-content {
+/* Show the dropdown menu when 'show' class is added */
+.dropdown.show .dropdown-content {
     display: block;
 }
 
-.dropdown:hover .dropbtn {
+.dropdown.show .dropbtn {
     color: #005177;
 }
 
@@ -89,6 +73,9 @@ input[aria-invalid="true"] {
     padding: 8px;
     border: 1px solid #ccc;
     border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 10px;
 }
 
 /* Style for table headers */
@@ -103,14 +90,6 @@ input[aria-invalid="true"] {
 .asl-settings-table td {
     padding: 10px;
     border-bottom: 1px solid #ddd;
-}
-
-/* Style for input fields */
-.asl-settings-table input[type="text"] {
-    padding: 6px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    box-sizing: border-box;
 }
 
 /* Responsive table */
