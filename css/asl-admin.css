@@ -12,7 +12,6 @@
     display: none;
     margin-top: 5px;
 }
-
 /* Optional: Style invalid input fields for better visibility */
 input[aria-invalid="true"] {
     border-color: red;
@@ -59,7 +58,8 @@ input[aria-invalid="true"] {
     background-color: #f1f1f1;
 }
 
-/* Show the dropdown menu when 'show' class is added */
+/* Removed hover-based dropdown display */
+
 .dropdown.show .dropdown-content {
     display: block;
 }
@@ -125,8 +125,6 @@ input[aria-invalid="true"] {
     }
 }
 
-/* Tooltip Styles (Activate if tooltips are implemented in PHP) */
-/*
 .asl-tooltip {
     margin-left: 5px;
     cursor: pointer;
@@ -150,4 +148,3 @@ input[aria-invalid="true"] {
     opacity: 0.9;
     pointer-events: none;
 }
-*/
