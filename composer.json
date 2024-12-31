@@ -15,5 +15,21 @@
     "require-dev": {
         "wpackagist-plugin/debloat": "^1.2",
         "wp-coding-standards/wpcs": "^3.1"
+    },
+    "scripts": {
+        "cs-fix": [
+            "phpcbf"
+        ],
+        "cs-fix-changes": [
+            "updated_files=$(echo $(git diff --name-only `git merge-base origin/main HEAD` | grep php)); if [ -n \"$updated_files\" ]; then phpcbf $(echo $updated_files); phpcs $(echo $updated_files); else echo \"No modified .php files for PHPCS.\"; fi;"
+        ],
+        "check": [
+            "phpcs . --standard=phpcs.xml -s"
+        ]
+    },
+    "scripts-descriptions": {
+        "cs-fix-changes": "Automatically fix coding standards issues in files changed since the main branch.",
+        "cs-fix": "Automatically fix all coding standards issues where possible.",
+        "check": "Check files against coding standards."
     }
 }
