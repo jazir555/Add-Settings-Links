@@ -1,11 +1,11 @@
 (function($) {
     $(document).ready(function() {
         // Cache frequently used selectors for performance optimization
-        const $searchInput = $('#asl_plugin_search');
-        const $tableRows   = $('.asl-settings-table tbody tr');
-        const $errorMessages = $('.asl-error-message');
-        const $textInputs = $('.asl-settings-table tbody tr td:nth-child(2) input[type="text"]');
-        const $form = $('form#asl-settings-form'); // Ensure your form has the ID 'asl-settings-form'
+        const $searchInput    = $('#asl_plugin_search');
+        const $tableRows      = $('.asl-settings-table tbody tr');
+        const $errorMessages  = $('.asl-error-message');
+        const $textInputs     = $('.asl-settings-table tbody tr td:nth-child(2) input[type="text"]');
+        const $form           = $('form#asl-settings-form'); // Ensure your form has the ID 'asl-settings-form'
 
         /**
          * Debounce function to limit the rate at which a function can fire.
@@ -58,6 +58,7 @@
             const errorMessage = $input.siblings('.asl-error-message');
             const raw = $input.val().trim();
             let allValid = true;
+            let invalidUrls = [];
 
             if (raw !== '') {
                 const urls = raw.split(',');
@@ -65,7 +66,7 @@
                     const check = urls[i].trim();
                     if (check !== '' && !urlPattern.test(check)) {
                         allValid = false;
-                        break;
+                        invalidUrls.push(check);
                     }
                 }
             }
@@ -74,9 +75,15 @@
                 if (!allValid) {
                     $input.css('border-color', 'red').attr('aria-invalid', 'true');
                     if (typeof ASL_Settings !== 'undefined' && ASL_Settings.invalid_url_message) {
-                        errorMessage.text(ASL_Settings.invalid_url_message).show();
+                        // Customize message to include invalid URLs
+                        const invalidList = invalidUrls.map(url => $('<div>').text(url).html()).join('<br>');
+                        errorMessage.html(
+                            ASL_Settings.invalid_url_message + '<br>' +
+                            invalidList
+                        ).show();
                     } else {
-                        errorMessage.text('Invalid URL.').show();
+                        // Fallback message
+                        errorMessage.html('Invalid URL(s): ' + invalidUrls.join(', ')).show();
                         console.warn('ASL_Settings.invalid_url_message is not defined.');
                     }
                 } else {
@@ -118,5 +125,36 @@
         if ($form.length) {
             $form.off('submit').on('submit', focusFirstInvalidInput);
         }
+
+        /**
+         * Dropdown Functionality
+         * Handles the toggling of dropdown menus for multiple settings links.
+         */
+
+        /**
+         * Toggle dropdown on button click.
+         *
+         * @param {jQuery.Event} e - The click event.
+         */
+        const toggleDropdown = function(e) {
+            e.preventDefault();
+            $(this).parent('.dropdown').toggleClass('show');
+        };
+
+        /**
+         * Close all dropdowns when clicking outside.
+         *
+         * @param {jQuery.Event} e - The click event.
+         */
+        const closeDropdowns = function(e) {
+            if (!$(e.target).closest('.dropdown').length) {
+                $('.dropdown').removeClass('show');
+            }
+        };
+
+        // Attach event handlers for dropdown functionality
+        $('.dropbtn').off('click').on('click', toggleDropdown);
+        $(document).off('click').on('click', closeDropdowns);
+
     });
 })(jQuery);
