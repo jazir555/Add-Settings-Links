@@ -114,7 +114,7 @@ trait ASL_EnhancedSettingsDetection
      *
      * @param string $plugin_dir       Plugin directory name.
      * @param string $plugin_basename  Plugin basename.
-     * @return string[]|false          Array of discovered URLs or false if none found.
+     * @return string[]                Array of discovered URLs or an empty array if none found.
      */
     private function extended_find_settings_url(string $plugin_dir, string $plugin_basename): array
     {
@@ -595,10 +595,9 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          */
         public function add_dynamic_plugin_action_links(): void
         {
-            if (!function_exists('get_plugins')) {
+            if (!\function_exists('get_plugins')) {
                 require_once ABSPATH . 'wp-admin/includes/plugin.php';
             }
-
             $all_plugins = get_plugins();
             foreach ($all_plugins as $plugin_file => $plugin_data) {
                 add_filter('plugin_action_links_' . $plugin_file, function($links) use ($plugin_file, $plugin_data) {
@@ -767,7 +766,8 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          */
         private function cache_admin_menu_slugs(): void
         {
-            $transient_key = $this->get_transient_key(\ASL_MENU_SLUGS_TRANSIENT);            if (false !== get_transient($transient_key)) {
+            $transient_key = $this->get_transient_key(\ASL_MENU_SLUGS_TRANSIENT);
+            if (false !== get_transient($transient_key)) {
                 $this->log_debug('Admin menu slugs are already cached. Skipping rebuild.');
                 return;
             }
@@ -1305,7 +1305,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             $transient_key = $this->get_transient_key(\ASL_CACHED_PLUGINS_TRANSIENT);
             $cached_plugins = get_transient($transient_key);
             if (false === $cached_plugins) {
-                if (!function_exists('get_plugins')) {
+                if (!\function_exists('get_plugins')) {
                     require_once ABSPATH . 'wp-admin/includes/plugin.php';
                 }
                 $cached_plugins = get_plugins();
