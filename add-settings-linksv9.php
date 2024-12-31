@@ -2,12 +2,12 @@
 /**
  * Plugin Name: Add Settings Links
  * Description: Adds direct links to the settings pages for all plugins that do not have one (including multisite/network admin support).
- * Version: 1.7.3
- * Author: Jazir5
+ * Version: 1.7.3 test
+ * Author: Jazir5 
  * Text Domain: add-settings-links
  * Domain Path: /languages
- * Requires PHP: 7.4
- */
+ * Requires PHP: 7.4, 
+ */ 
 
 namespace ASL;
 
