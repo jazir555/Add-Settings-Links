@@ -6,7 +6,7 @@
  * Author: Jazir5
  * Text Domain: add-settings-links
  * Domain Path: /languages
- * Requires PHP: 7.4,
+ * Requires PHP: 7.4
  */
 
 namespace ASL;
