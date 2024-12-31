@@ -170,6 +170,12 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 );
             } else {
                 $this->log_debug("CSS file {$css_file} not found.");
+                add_action('admin_notices', function() use ($css_file) {
+                    printf(
+                        '<div class="notice notice-error"><p>%s</p></div>',
+                        esc_html__("Add Settings Links: Missing CSS file {$css_file}. Please ensure the file exists in the 'css' directory.", 'add-settings-links')
+                    );
+                });
             }
 
             // Enqueue JavaScript
@@ -198,6 +204,12 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 );
             } else {
                 $this->log_debug("JavaScript file {$js_file} not found.");
+                add_action('admin_notices', function() use ($js_file) {
+                    printf(
+                        '<div class="notice notice-error"><p>%s</p></div>',
+                        esc_html__("Add Settings Links: Missing JavaScript file {$js_file}. Please ensure the file exists in the 'js' directory.", 'add-settings-links')
+                    );
+                });
             }
         }
 
@@ -463,7 +475,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 return $links;
             }
 
-            // 2. Use the trait’s extended detection approach (only menu slug detection)
+            // 2. Use menu slug detection
             $plugin_basename_clean = plugin_basename($plugin_file);
             $plugin_dir_clean      = dirname($plugin_basename_clean);
             $urls = $this->find_settings_in_admin_menu($plugin_dir_clean, $plugin_basename_clean);
@@ -474,13 +486,6 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     if (!$url) {
                         continue;
                     }
-                    if ($this->is_valid_admin_url($url) && !$this->link_already_exists($links, $url)) {
-                        $links = $this->prepend_settings_link($links, [$url], $plugin_data['Name']);
-                        $settings_added = true;
-                    } else {
-                        $this->log_debug("Invalid detected URL for plugin {$plugin_data['Name']}: {$url}");
-                    }
-
 
                     if ($this->is_valid_admin_url($url) && !$this->link_already_exists($links, $url)) {
                         $links = $this->prepend_settings_link($links, [$url], $plugin_data['Name']);
@@ -828,173 +833,6 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 </tbody>
             </table>
             <?php
-        }
-
-        /**
-         * Checks if the plugin’s action links already have a recognized “settings-like” link.
-         *
-         * @param array $links Array of existing plugin action links.
-         * @return bool        True if a settings link exists, false otherwise.
-         */
-        private function plugin_has_settings_link(array $links): bool
-        {
-            if (empty($links)) {
-                return false;
-            }
-            $synonyms = apply_filters('add_settings_links_synonyms', [
-                'settings', 'setting', 'configure', 'config',
-                'options', 'option', 'manage', 'setup',
-                'admin', 'preferences', 'prefs',
-            ]);
-
-            foreach ($links as $link_html) {
-                if (preg_match('/<a\s[^>]*>([^<]+)<\/a>/i', $link_html, $m)) {
-                    $text = strtolower(trim($m[1]));
-                    foreach ($synonyms as $word) {
-                        if (strpos($text, $word) !== false) {
-                            return true;
-                        }
-                    }
-                }
-            }
-            return false;
-        }
-
-        /**
-         * Determine if a URL is already present in the plugin’s action links (to avoid duplicates).
-         *
-         * @param array  $links   Array of existing plugin action links.
-         * @param string $new_url New settings page URL to check.
-         * @return bool           True if the URL already exists, false otherwise.
-         */
-        private function link_already_exists(array $links, string $new_url): bool
-        {
-            $parsed_new = parse_url($new_url);
-            if (!$parsed_new) {
-                return false;
-            }
-            foreach ($links as $html) {
-                if (preg_match('/href=[\'"]([^\'"]+)[\'"]/', $html, $m)) {
-                    $parsed_existing = parse_url($m[1]);
-                    if (!$parsed_existing) {
-                        continue;
-                    }
-                    if ($this->urls_are_equivalent($parsed_existing, $parsed_new)) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        /**
-         * Compare two parsed URLs to see if they effectively represent the same admin link.
-         *
-         * @param array $existing Parsed URL array of the existing link.
-         * @param array $new      Parsed URL array of the new link.
-         * @return bool           True if URLs are equivalent, false otherwise.
-         */
-        private function urls_are_equivalent(array $existing, array $new): bool
-        {
-            // Compare scheme, host, and path
-            if (!empty($existing['host']) && !empty($new['host'])) {
-                $same_scheme = (isset($existing['scheme'], $new['scheme']))
-                    ? ($existing['scheme'] === $new['scheme'])
-                    : true;
-                $same_host = ($existing['host'] === $new['host']);
-                $same_path = (isset($existing['path'], $new['path']))
-                    ? ($existing['path'] === $new['path'])
-                    : false;
-                if ($same_scheme && $same_host && $same_path) {
-                    return true;
-                }
-            } else {
-                // If no host, compare path and specific query parameters
-                if (isset($existing['path'], $new['path']) && $existing['path'] === $new['path']) {
-                    parse_str($existing['query'] ?? '', $ex_q);
-                    parse_str($new['query'] ?? '', $nw_q);
-                    if (isset($ex_q['page'], $nw_q['page'])) {
-                        return ($ex_q['page'] === $nw_q['page']);
-                    }
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /**
-         * Clears the cached menu slugs + plugin data.
-         */
-        public function clear_cached_menu_slugs(): void
-        {
-            $transient_key_slugs = $this->get_transient_key(ASL_MENU_SLUGS_TRANSIENT);
-            $transient_key_plugins = $this->get_transient_key(ASL_CACHED_PLUGINS_TRANSIENT);
-            delete_transient($transient_key_slugs);
-            delete_transient($transient_key_plugins);
-            $this->log_debug('Cleared cached menu slugs and plugin list transient.');
-        }
-
-        /**
-         * Invalidates the slug cache upon plugin or theme updates/installs.
-         *
-         * @param object $upgrader Object instance of the upgrader.
-         * @param array  $options  Array of upgrade options.
-         */
-        public function dynamic_cache_invalidation($upgrader, $options): void
-        {
-            if (!is_array($options)) {
-                $this->log_debug('dynamic_cache_invalidation called with non-array $options, skipping.');
-                return;
-            }
-            if (!empty($options['type']) && in_array($options['type'], ['plugin', 'theme'], true)) {
-                $this->clear_cached_menu_slugs();
-            }
-        }
-
-        /**
-         * Registers the “manual overrides” settings only on relevant screens (single-site or network “options-general”).
-         */
-        public function maybe_register_settings(): void
-        {
-            $valid_screens = ['options-general', 'options-general-network', 'settings_page_asl_settings'];
-            if (!$this->should_run_on_screen($valid_screens)) {
-                return;
-            }
-            $this->register_settings();
-        }
-
-        /**
-         * Actually register the “asl_manual_overrides” setting, plus its section and field.
-         */
-        private function register_settings(): void
-        {
-            register_setting('asl_settings_group', 'asl_manual_overrides', [$this, 'sanitize_manual_overrides']);
-
-            add_settings_section(
-                'asl_settings_section',
-                __('Manual Settings Overrides', 'add-settings-links'),
-                [$this, 'settings_section_callback'],
-                'asl_settings'
-            );
-
-            add_settings_field(
-                'asl_manual_overrides_field',
-                __('Manual Overrides', 'add-settings-links'),
-                [$this, 'manual_overrides_field_callback'],
-                'asl_settings',
-                'asl_settings_section'
-            );
-        }
-
-        /**
-         * Renders a short description for the manual overrides settings section.
-         */
-        public function settings_section_callback(): void
-        {
-            echo '<p>' . esc_html__(
-                    'Specify custom settings page URLs for plugins with multiple or unconventional settings pages.',
-                    'add-settings-links'
-                ) . '</p>';
         }
 
         /**
