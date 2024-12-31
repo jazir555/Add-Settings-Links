@@ -31,495 +31,9 @@ if (!defined('ASL_CACHED_PLUGINS_TRANSIENT')) {
 if (!defined('ASL_CACHED_PLUGINS_TRANSIENT_EXPIRATION')) {
     define('ASL_CACHED_PLUGINS_TRANSIENT_EXPIRATION', DAY_IN_SECONDS);
 }
-if (!defined('ASL_PLUGIN_FILES_TRANSIENT_EXPIRATION')) {
-    define('ASL_PLUGIN_FILES_TRANSIENT_EXPIRATION', 24 * HOUR_IN_SECONDS); // Example: 24 hours
-}
-/**
- * Enhanced Settings Detection Trait
- *
- * Provides improved methods for detecting WordPress plugin settings pages
- * through multiple detection strategies.
- *
- * @requires get_transient_key(string): string
- * @requires cache_admin_menu_slugs(): void
- * @requires log_debug(string): void
- */
-trait ASL_EnhancedSettingsDetection
-{
-    /**
-     * Common settings-related terms across multiple languages.
-     */
-    protected static $settings_terms = [
-        'en' => ['settings', 'options', 'preferences', 'configuration'],
-        'de' => ['einstellungen', 'optionen', 'konfiguration'],
-        'es' => ['ajustes', 'opciones', 'configuración'],
-        'fr' => ['paramètres', 'options', 'configuration'],
-        // Add more languages as needed
-    ];
-    /**
-     * Provide a method for the trait to discover potential settings by scanning the cached admin menu.
-     * This method is called only if `method_exists($this, 'find_settings_in_admin_menu')` is true.
-     *
-     * @param string $plugin_dir      e.g. "my-plugin"
-     * @param string $plugin_basename e.g. "my-plugin/my-plugin.php"
-     * @return string[] Potential admin URLs discovered from the WP menu, or empty array if none
-     */
-    private function find_settings_in_admin_menu(string $plugin_dir, string $plugin_basename): array
-    {
-        $found_urls = [];
-        $transient_key = $this->get_transient_key(\ASL_MENU_SLUGS_TRANSIENT);
-        $cached_slugs = get_transient($transient_key);
-        if (!is_array($cached_slugs)) {
-            $cached_slugs = [];
-        }
-        // If empty, try caching now
-        if (empty($cached_slugs) || !is_array($cached_slugs)) {
-            $this->cache_admin_menu_slugs();
-            $cached_slugs = get_transient($transient_key);
-        }
-        if (empty($cached_slugs) || !is_array($cached_slugs)) {
-            $this->log_debug('Cannot find potential settings slugs. Cache is empty or invalid (in find_settings_in_admin_menu).');
-            return $found_urls;
-        }
+/* Removed ASL_PLUGIN_FILES_TRANSIENT_EXPIRATION as file analysis is no longer used */
 
-        // Generate potential slugs from the plugin’s folder + file naming
-        $potential_slugs = $this->generate_potential_slugs($plugin_dir, $plugin_basename);
-
-        // Compare against cached admin menu slugs
-        foreach ($cached_slugs as $item) {
-            if (isset($item['slug'], $item['url']) && in_array($item['slug'], $potential_slugs, true)) {
-                $this->log_debug("Found potential admin menu URL for plugin '$plugin_basename': " . $item['url']);
-                $found_urls[] = $item['url'];
-            }
-        }
-
-        return array_unique($found_urls);
-    }
-    /**
-     * An "extended" approach to find potential settings URLs, combining multiple strategies.
-     *
-     * 1) If available, uses find_settings_in_admin_menu() from the main class to glean URLs from the cached WP admin menu.
-     * 2) Static file analysis of plugin files (regex searching for known patterns).
-     * 3) Option table analysis for plugin-specific settings.
-     * 4) Hook analysis for admin-related callbacks.
-     *
-     * @param string $plugin_dir       Plugin directory name.
-     * @param string $plugin_basename  Plugin basename.
-     * @return string[]                Array of discovered URLs or an empty array if none found.
-     */
-    private function extended_find_settings_url(string $plugin_dir, string $plugin_basename): array
-    {
-        $found_urls = [];
-        $menu_urls = [];
-        $file_urls = [];
-        $option_urls = [];
-        $hook_urls = [];
-
-        // 1. Use the main class’s method if it exists (e.g., scanning the cached WP admin menu).
-        if (method_exists($this, 'find_settings_in_admin_menu')) {
-            $menu_urls = $this->find_settings_in_admin_menu($plugin_dir, $plugin_basename);
-            if ($menu_urls) {
-                $found_urls = array_merge($found_urls, $menu_urls);
-            }
-        }
-
-        // 2. Static file analysis (advanced).
-        $file_urls = $this->analyze_plugin_files($plugin_basename);
-        if ($file_urls) {
-            $found_urls = array_merge($found_urls, $file_urls);
-        }
-
-        // 3. Option table analysis.
-        $option_urls = $this->analyze_options_table($plugin_dir, $plugin_basename);
-        if ($option_urls) {
-            $found_urls = array_merge($found_urls, $option_urls);
-        }
-
-        // 4. Hook analysis.
-        $hook_urls = $this->analyze_registered_hooks($plugin_dir);
-        if ($hook_urls) {
-            $found_urls = array_merge($found_urls, $hook_urls);
-        }
-
-        return !empty($found_urls) ? array_unique($found_urls) : [];
-    }
-
-    /**
-     * Analyze plugin files for potential settings pages.
-     *
-     * @param string $plugin_basename Plugin basename.
-     * @return array                  Array of discovered admin URLs.
-     */
-    private function analyze_plugin_files(string $plugin_basename): array
-    {
-        $plugin_dir = WP_PLUGIN_DIR . '/' . dirname($plugin_basename);
-        if (!is_dir($plugin_dir)) {
-            return [];
-        }
-
-        $transient_key = $this->get_transient_key('asl_analyze_plugin_files_' . md5($plugin_basename));
-        $cached_urls = get_transient($transient_key);
-        if ($cached_urls !== false) {
-            $this->log_debug('Retrieved plugin file analysis from cache.');
-            return $cached_urls;
-        }
-
-        $found_urls = [];
-        $files = $this->recursively_scan_directory($plugin_dir, ['php']);
-
-        foreach ($files as $file) {
-            if (empty($file) || stripos($file, '/vendor/') !== false) {
-                continue;
-            }
-            $content = @file_get_contents($file);
-            if ($content === false) {
-                $this->log_debug("Failed to read file: $file");
-                continue;
-            }
-
-            // Look for common settings page registration patterns
-            $patterns = [
-                'add_menu_page',
-                'add_options_page',
-                'add_submenu_page',
-                'register_setting',
-                'add_settings_section',
-                'settings_fields',
-                'options-general.php'
-            ];
-
-            foreach ($patterns as $pattern) {
-                if (stripos($content, $pattern) !== false) { // Case-insensitive search
-                    // Extract potential URLs using regex
-                    if (preg_match_all('/[\'"]([^\'"]*(settings|options|config)[^\'"]*)[\'"]/', $content, $matches)) {
-                        foreach ($matches[1] as $match) {
-                            if ($this->is_valid_admin_url($match)) {
-                                $found_urls[] = admin_url($match);
-                            }
-                        }
-                    }
-                    break; // Stop checking other patterns once a match is found
-                }
-            }
-        }
-
-        $found_urls = array_unique($found_urls);
-        set_transient($transient_key, $found_urls, \ASL_PLUGIN_FILES_TRANSIENT_EXPIRATION);
-        $this->log_debug('Plugin file analysis cached.');
-
-        return $found_urls;
-    }
-    /**
-     * Fallback method to find settings URLs using standard URL patterns.
-     *
-     * @param mixed  $classOrObject Class name or object.
-     * @param string $method        Method name.
-     * @return array                Array of discovered admin URLs.
-     */
-    private function fallback_find_settings_url($classOrObject, string $method): array
-    {
-        $found = [];
-
-        // Common URL patterns for settings pages
-        $common_patterns = [
-            'settings',
-            'options',
-            'configure',
-            'config',
-            'setup',
-            'admin',
-            'preferences',
-            'prefs',
-        ];
-
-        foreach ($common_patterns as $pattern) {
-            $potential_url = 'admin.php?page=' . sanitize_title_with_dashes($pattern);
-            if ($this->is_valid_admin_url($potential_url)) {
-                $found[] = admin_url($potential_url);
-                $this->log_debug("Fallback detected settings URL: " . admin_url($potential_url));
-            }
-        }
-
-        return array_unique($found);
-    }
-
-    /**
-     * Analyze the WP options table for plugin-specific setting references.
-     *
-     * @param string $plugin_dir       Plugin directory name.
-     * @param string $plugin_basename  Plugin basename.
-     * @return array                   Array of discovered admin URLs.
-     */
-    private function analyze_options_table(string $plugin_dir, string $plugin_basename): array
-    {
-        global $wpdb;
-        $found_urls = [];
-
-        // Possible prefixes based on plugin directory and basename
-        $possible_prefixes = [
-            str_replace('-', '_', sanitize_title($plugin_dir)) . '_',
-            str_replace('-', '_', sanitize_title($plugin_basename)) . '_',
-            sanitize_title($plugin_dir) . '_',
-            sanitize_title($plugin_basename) . '_',
-        ];
-
-        // Build the LIKE patterns
-        $like_patterns = [];
-        foreach ($possible_prefixes as $prefix) {
-            $like_patterns[] = $wpdb->esc_like($prefix) . '%';
-        }
-
-        if (empty($like_patterns)) {
-            return [];
-        }
-
-        // Construct the SQL query with dynamic placeholders
-        $placeholders = implode(' OR option_name LIKE ', array_fill(0, count($like_patterns), '%s'));
-        $query = "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE " . implode(' OR option_name LIKE ', array_fill(0, count($like_patterns), '%s'));
-
-        // Execute the query
-        $options = $wpdb->get_results(
-            $wpdb->prepare(
-                $query,
-                ...$like_patterns
-            )
-        );
-
-        if ($options) {
-            // If plugin has registered options, guess potential settings pages from known patterns
-            $all_terms = [];
-            foreach (self::$settings_terms as $langArr) {
-                $all_terms = array_merge($all_terms, $langArr);
-            }
-            $all_terms = array_unique($all_terms);
-
-            // For each known settings word, guess a "page=" slug
-            foreach ($all_terms as $pattern) {
-                $potential_url = 'admin.php?page=' . $plugin_dir . '-' . $pattern;
-                if ($this->is_valid_admin_url($potential_url)) {
-                    $found_urls[] = admin_url($potential_url);
-                }
-
-                // Additionally, try using plugin basename
-                $potential_url_basename = 'admin.php?page=' . $plugin_basename . '-' . $pattern;
-                if ($this->is_valid_admin_url($potential_url_basename)) {
-                    $found_urls[] = admin_url($potential_url_basename);
-                }
-            }
-        }
-
-        return array_unique($found_urls);
-    }
-
-    /**
-     * Analyze registered hooks for settings-related callbacks.
-     *
-     * @param string $plugin_dir Plugin directory name.
-     * @return array             Array of discovered admin URLs.
-     */
-    private function analyze_registered_hooks(string $plugin_dir): array
-    {
-        global $wp_filter;
-        $found_urls = [];
-        $settings_hooks = [
-            'admin_menu',
-            'admin_init',
-            'network_admin_menu',
-            'options_page',
-        ];
-
-        foreach ($settings_hooks as $hook) {
-            if (!isset($wp_filter[$hook])) {
-                continue;
-            }
-
-            // WP 5.7+ organizes callbacks differently
-            foreach ($wp_filter[$hook] as $priority => $callbacks) {
-                foreach ($callbacks as $callback) {
-                    if (is_array($callback['function'])) {
-                        $classOrObject = $callback['function'][0];
-                        $method        = $callback['function'][1];
-
-                        // Check if it belongs to this plugin
-                        if (is_object($classOrObject)) {
-                            $className = get_class($classOrObject);
-                            if (stripos($className, $plugin_dir) !== false) {
-                                $found_urls = array_merge(
-                                    $found_urls,
-                                    $this->extract_urls_via_reflection($classOrObject, $method)
-                                );
-                            }
-                        } elseif (is_string($classOrObject) && stripos($classOrObject, $plugin_dir) !== false) {
-                            // It's a static call
-                            $found_urls = array_merge(
-                                $found_urls,
-                                $this->extract_urls_via_reflection($classOrObject, $method, true)
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
-        return array_unique($found_urls);
-    }
-
-    /**
-     * Use reflection to read file content for a given class method, searching for possible settings URLs.
-     *
-     * @param mixed  $classOrObject Class name or object.
-     * @param string $method        Method name.
-     * @param bool   $isStatic      Whether the method is static.
-     * @return array                Array of discovered admin URLs.
-     */
-    private function extract_urls_via_reflection($classOrObject, string $method, bool $isStatic = false): array
-    {
-        $found = [];
-        $cache_key = 'asl_reflection_' . md5($classOrObject . $method . ($isStatic ? '_static' : ''));
-        $cached_urls = get_transient($cache_key);
-        if ($cached_urls !== false) {
-            $this->log_debug('Retrieved reflection URLs from cache.');
-            return $cached_urls;
-        }
-
-        try {
-            $reflection = $isStatic
-                ? new \ReflectionMethod($classOrObject, $method)
-                : new \ReflectionMethod(get_class($classOrObject), $method);
-
-            $file_path = $reflection->getFileName();
-
-            if (!$file_path || !file_exists($file_path) || !is_readable($file_path)) {
-                $this->log_debug("Cannot access the file for method {$method} in class " . get_class($classOrObject));
-                return [];
-            }
-
-            $content = @file_get_contents($file_path);
-
-            if ($content === false) {
-                $this->log_debug("Failed to read the file: {$file_path} for method {$method} in class " . get_class($classOrObject));
-                return [];
-            }
-
-            // Improved regex to target likely URL patterns more accurately
-            // This regex looks for URLs within quotes that include 'settings', 'options', or 'config' as a parameter value
-            if ($content && preg_match_all('/[\'"]admin\.php\?page=([\w\-]+)[\'"]/', $content, $matches)) {
-                foreach ($matches[0] as $index => $full_match) {
-                    $page_param = $matches[1][$index];
-                    $potential_url = 'admin.php?page=' . $page_param;
-                    if ($this->is_valid_admin_url($potential_url)) {
-                        $found[] = admin_url($potential_url);
-                    }
-                }
-            } else {
-                $this->log_debug("No matching URLs found in the file: {$file_path} for method {$method}.");
-
-                // Utilize the fallback method
-                $fallback_urls = $this->fallback_find_settings_url($classOrObject, $method);
-                if (!empty($fallback_urls)) {
-                    $found = array_merge($found, $fallback_urls);
-                    $this->log_debug("Fallback found URLs: " . implode(', ', $fallback_urls));
-                }
-            }
-        } catch (\ReflectionException $e) {
-            // Log the exception for debugging
-            $this->log_debug('ReflectionException: ' . $e->getMessage());
-            return [];
-        } catch (\Exception $e) {
-            // Catch any other unexpected exceptions
-            $this->log_debug('Unexpected Exception in extract_urls_via_reflection: ' . $e->getMessage());
-            return [];
-        }
-
-        $found = array_unique($found);
-        if (!empty($found)) {
-            set_transient($cache_key, $found, \ASL_PLUGIN_FILES_TRANSIENT_EXPIRATION);
-            $this->log_debug('Reflection URLs cached.');
-        } else {
-            $this->log_debug('No valid URLs found to cache in reflection.');
-        }
-
-        return $found;
-    }
-
-    /**
-     * Recursively scan directory for files with specific extensions.
-     *
-     * @param string $dir        Directory path.
-     * @param array  $extensions Array of file extensions to include.
-     * @return array             Array of file paths.
-     */
-    private function recursively_scan_directory(string $dir, array $extensions): array
-    {
-        $files = [];
-        if (!class_exists('RecursiveIteratorIterator') || !class_exists('RecursiveDirectoryIterator')) {
-            return $files; // Not available in this PHP environment
-        }
-
-        try {
-            $iterator = new \RecursiveIteratorIterator(
-                new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS)
-            );
-
-            foreach ($iterator as $file) {
-                if (in_array(strtolower(pathinfo($file, PATHINFO_EXTENSION)), $extensions, true)) {
-                    $files[] = $file->getPathname();
-                }
-            }
-        } catch (\UnexpectedValueException $e) {
-            // Directory read error
-            $this->log_debug('UnexpectedValueException: ' . $e->getMessage());
-        }
-        return $files;
-    }
-
-    /**
-     * Validate if a given path could be a valid admin URL.
-     *
-     * @param string $path URL path.
-     * @return bool        True if valid, false otherwise.
-     */
-    private function is_valid_admin_url(string $path): bool
-    {
-        // Allow only specific admin pages, extendable via filter
-        $allowed_pages = apply_filters('asl_allowed_admin_pages', [
-            'admin.php',
-            'options-general.php',
-            'tools.php',
-            'settings_page_asl_settings',
-            // Add more known admin pages as needed
-        ]);
-
-        // Parse the URL
-        $parsed = parse_url($path);
-        if (!$parsed || !isset($parsed['path'])) {
-            return false;
-        }
-
-        $page = basename($parsed['path']);
-        if (!in_array($page, $allowed_pages, true)) {
-            return false;
-        }
-
-        // Ensure no disallowed characters
-        if (preg_match('/[<>"\'&]/', $path)) {
-            return false;
-        }
-
-        // Optionally, enforce specific query parameters
-        if (isset($parsed['query'])) {
-            parse_str($parsed['query'], $query_params);
-            if (isset($query_params['page'])) {
-                // Validate the 'page' parameter format
-                if (!preg_match('/^[\w\-]+$/', $query_params['page'])) {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-}
+// Removed the 'ASL_EnhancedSettingsDetection' trait as we're simplifying detection
 
 if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
 
@@ -531,17 +45,18 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
      */
     class ASL_AddSettingsLinks
     {
-        use ASL_EnhancedSettingsDetection; // Incorporate the trait here
         /**
          * Plugin version.
          */
         const VERSION = '1.7.3';
+
         /**
          * Singleton instance.
          *
          * @var self|null
          */
         private static $instance = null;
+
         /**
          * List of plugin basenames that have no recognized settings page.
          * We show them in one aggregated notice on relevant screens.
@@ -551,41 +66,36 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
         private $missing_settings = [];
 
         /**
-         * Constructor: sets up WordPress hooks and filters for single-site + network usage.
+         * Common settings-related terms across multiple languages.
+         */
+        protected static $settings_terms = [
+            'en' => ['settings', 'options', 'preferences', 'configuration'],
+            'de' => ['einstellungen', 'optionen', 'konfiguration'],
+            'es' => ['ajustes', 'opciones', 'configuración'],
+            'fr' => ['paramètres', 'options', 'configuration'],
+            // Add more languages as needed
+        ];
+
+        /**
+         * Private constructor to prevent multiple instances.
          */
         private function __construct()
         {
-            // 1. Load plugin text domain for translations.
+            // Hook registrations
             add_action('plugins_loaded', [$this, 'load_textdomain']);
-
-            // 2. Conditionally cache admin menu slugs (single-site or network).
             add_action('admin_menu', [$this, 'maybe_cache_admin_menu_slugs'], 9999);
-
-            // 3. Dynamically add plugin action links filters for all plugins.
             add_action('admin_init', [$this, 'add_dynamic_plugin_action_links']);
-
-            // 4. Clear cached slugs whenever a plugin is activated/deactivated.
             add_action('activated_plugin', [$this, 'clear_cached_menu_slugs']);
             add_action('deactivated_plugin', [$this, 'clear_cached_menu_slugs']);
-
-            // 5. Invalidate cached slugs on plugin/theme updates/installs.
             add_action('upgrader_process_complete', [$this, 'dynamic_cache_invalidation'], 10, 2);
-
-            // 6. Register manual overrides on relevant admin screens.
             add_action('admin_init', [$this, 'maybe_register_settings']);
-
-            // 7. Add our plugin’s settings page under “Settings” (also works in network admin if you prefer).
             add_action('admin_menu', [$this, 'maybe_add_settings_page']);
-
-            // 8. Display an aggregated notice about missing settings pages (single-site + network).
             add_action('admin_notices', [$this, 'maybe_display_admin_notices']);
             add_action('network_admin_notices', [$this, 'maybe_display_admin_notices']);
-
-            // 9. Enqueue Admin Scripts and Styles
             add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
-            // 11. Handle AJAX requests for URL validation
             add_action('wp_ajax_asl_validate_url', [$this, 'ajax_validate_url']);
         }
+
         /**
          * Retrieves the singleton instance.
          *
@@ -598,6 +108,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             }
             return self::$instance;
         }
+
         /**
          * Dynamically add plugin action links filters for all installed plugins.
          */
@@ -613,6 +124,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 }, 20, 1); // Set accepted arguments to 1
             }
         }
+
         /**
          * Loads the plugin's text domain for i18n.
          */
@@ -625,6 +137,9 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             );
         }
 
+        /**
+         * Enqueue Admin Scripts and Styles
+         */
         public function enqueue_admin_assets(string $hook): void
         {
             /**
@@ -774,7 +289,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          */
         private function cache_admin_menu_slugs(): void
         {
-            $transient_key = $this->get_transient_key(\ASL_MENU_SLUGS_TRANSIENT);
+            $transient_key = $this->get_transient_key(ASL_MENU_SLUGS_TRANSIENT);
             if (false !== get_transient($transient_key)) {
                 $this->log_debug('Admin menu slugs are already cached. Skipping rebuild.');
                 return;
@@ -908,10 +423,10 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 return $links;
             }
 
-            // 2. Use the trait’s extended detection approach
+            // 2. Use the trait’s extended detection approach (only menu slug detection)
             $plugin_basename_clean = plugin_basename($plugin_file);
             $plugin_dir_clean      = dirname($plugin_basename_clean);
-            $urls = $this->extended_find_settings_url($plugin_dir_clean, $plugin_basename_clean);
+            $urls = $this->find_settings_in_admin_menu($plugin_dir_clean, $plugin_basename_clean);
 
             if (!empty($urls)) {
                 foreach ($urls as $url) {
@@ -923,14 +438,14 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     if (strpos($url, 'http') === 0) {
                         $full_url = esc_url_raw($url);
                     } else {
-                        $full_url = esc_url(admin_url($url));
+                        $full_url = esc_url($url); // Changed from admin_url($url) to esc_url($url) since $url is already full URL
                     }
 
-                    if ($this->is_valid_admin_url($full_url) && !$this->link_already_exists($links, $full_url)) {
-                        $links = $this->prepend_settings_link($links, [$full_url], $plugin_data['Name']);
+                    if ($this->is_valid_admin_url($url) && !$this->link_already_exists($links, $url)) {
+                        $links = $this->prepend_settings_link($links, [$url], $plugin_data['Name']);
                         $settings_added = true;
                     } else {
-                        $this->log_debug("Invalid detected URL for plugin {$plugin_data['Name']}: {$full_url}");
+                        $this->log_debug("Invalid detected URL for plugin {$plugin_data['Name']}: {$url}");
                     }
                 }
             }
@@ -1040,6 +555,176 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
             return $links;
         }
 
+        /**
+         * Checks if the plugin’s action links already have a recognized “settings-like” link.
+         *
+         * @param array $links Array of existing plugin action links.
+         * @return bool        True if a settings link exists, false otherwise.
+         */
+        private function plugin_has_settings_link(array $links): bool
+        {
+            if (empty($links)) {
+                return false;
+            }
+            $synonyms = apply_filters('add_settings_links_synonyms', [
+                'settings', 'setting', 'configure', 'config',
+                'options', 'option', 'manage', 'setup',
+                'admin', 'preferences', 'prefs',
+            ]);
+
+            foreach ($links as $link_html) {
+                if (preg_match('/<a\s[^>]*>([^<]+)<\/a>/i', $link_html, $m)) {
+                    $text = strtolower(trim($m[1]));
+                    foreach ($synonyms as $word) {
+                        if (strpos($text, $word) !== false) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Determine if a URL is already present in the plugin’s action links (to avoid duplicates).
+         *
+         * @param array  $links   Array of existing plugin action links.
+         * @param string $new_url New settings page URL to check.
+         * @return bool           True if the URL already exists, false otherwise.
+         */
+        private function link_already_exists(array $links, string $new_url): bool
+        {
+            $parsed_new = parse_url($new_url);
+            if (!$parsed_new) {
+                return false;
+            }
+            foreach ($links as $html) {
+                if (preg_match('/href=[\'"]([^\'"]+)[\'"]/', $html, $m)) {
+                    $parsed_existing = parse_url($m[1]);
+                    if (!$parsed_existing) {
+                        continue;
+                    }
+                    if ($this->urls_are_equivalent($parsed_existing, $parsed_new)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Compare two parsed URLs to see if they effectively represent the same admin link.
+         *
+         * @param array $existing Parsed URL array of the existing link.
+         * @param array $new      Parsed URL array of the new link.
+         * @return bool           True if URLs are equivalent, false otherwise.
+         */
+        private function urls_are_equivalent(array $existing, array $new): bool
+        {
+            // Compare scheme, host, and path
+            if (!empty($existing['host']) && !empty($new['host'])) {
+                $same_scheme = (isset($existing['scheme'], $new['scheme']))
+                    ? ($existing['scheme'] === $new['scheme'])
+                    : true;
+                $same_host = ($existing['host'] === $new['host']);
+                $same_path = (isset($existing['path'], $new['path']))
+                    ? ($existing['path'] === $new['path'])
+                    : false;
+                if ($same_scheme && $same_host && $same_path) {
+                    return true;
+                }
+            } else {
+                // If no host, compare path and specific query parameters
+                if (isset($existing['path'], $new['path']) && $existing['path'] === $new['path']) {
+                    parse_str($existing['query'] ?? '', $ex_q);
+                    parse_str($new['query'] ?? '', $nw_q);
+                    if (isset($ex_q['page'], $nw_q['page'])) {
+                        return ($ex_q['page'] === $nw_q['page']);
+                    }
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Clears the cached menu slugs + plugin data.
+         */
+        public function clear_cached_menu_slugs(): void
+        {
+            $transient_key_slugs = $this->get_transient_key(ASL_MENU_SLUGS_TRANSIENT);
+            $transient_key_plugins = $this->get_transient_key(ASL_CACHED_PLUGINS_TRANSIENT);
+            delete_transient($transient_key_slugs);
+            delete_transient($transient_key_plugins);
+            $this->log_debug('Cleared cached menu slugs and plugin list transient.');
+        }
+
+        /**
+         * Invalidates the slug cache upon plugin or theme updates/installs.
+         *
+         * @param object $upgrader Object instance of the upgrader.
+         * @param array  $options  Array of upgrade options.
+         */
+        public function dynamic_cache_invalidation($upgrader, $options): void
+        {
+            if (!is_array($options)) {
+                $this->log_debug('dynamic_cache_invalidation called with non-array $options, skipping.');
+                return;
+            }
+            if (!empty($options['type']) && in_array($options['type'], ['plugin', 'theme'], true)) {
+                $this->clear_cached_menu_slugs();
+            }
+        }
+
+        /**
+         * Registers the “manual overrides” settings only on relevant screens (single-site or network “options-general”).
+         */
+        public function maybe_register_settings(): void
+        {
+            $valid_screens = ['options-general', 'options-general-network', 'settings_page_asl_settings'];
+            if (!$this->should_run_on_screen($valid_screens)) {
+                return;
+            }
+            $this->register_settings();
+        }
+
+        /**
+         * Actually register the “asl_manual_overrides” setting, plus its section and field.
+         */
+        private function register_settings(): void
+        {
+            register_setting('asl_settings_group', 'asl_manual_overrides', [$this, 'sanitize_manual_overrides']);
+
+            add_settings_section(
+                'asl_settings_section',
+                __('Manual Settings Overrides', 'add-settings-links'),
+                [$this, 'settings_section_callback'],
+                'asl_settings'
+            );
+
+            add_settings_field(
+                'asl_manual_overrides_field',
+                __('Manual Overrides', 'add-settings-links'),
+                [$this, 'manual_overrides_field_callback'],
+                'asl_settings',
+                'asl_settings_section'
+            );
+        }
+
+        /**
+         * Renders a short description for the manual overrides settings section.
+         */
+        public function settings_section_callback(): void
+        {
+            echo '<p>' . esc_html__(
+                    'Specify custom settings page URLs for plugins with multiple or unconventional settings pages.',
+                    'add-settings-links'
+                ) . '</p>';
+        }
+
+        /**
+         * Renders the manual overrides field.
+         */
         public function manual_overrides_field_callback(): void
         {
             $manual_overrides = get_option('asl_manual_overrides', []);
@@ -1201,8 +886,8 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          */
         public function clear_cached_menu_slugs(): void
         {
-            $transient_key_slugs = $this->get_transient_key(\ASL_MENU_SLUGS_TRANSIENT);
-            $transient_key_plugins = $this->get_transient_key(\ASL_CACHED_PLUGINS_TRANSIENT);
+            $transient_key_slugs = $this->get_transient_key(ASL_MENU_SLUGS_TRANSIENT);
+            $transient_key_plugins = $this->get_transient_key(ASL_CACHED_PLUGINS_TRANSIENT);
             delete_transient($transient_key_slugs);
             delete_transient($transient_key_plugins);
             $this->log_debug('Cleared cached menu slugs and plugin list transient.');
@@ -1266,11 +951,84 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
         public function settings_section_callback(): void
         {
             echo '<p>' . esc_html__(
-                'Specify custom settings page URLs for plugins with multiple or unconventional settings pages.',
-                'add-settings-links'
-            ) . '</p>';
+                    'Specify custom settings page URLs for plugins with multiple or unconventional settings pages.',
+                    'add-settings-links'
+                ) . '</p>';
         }
 
+        /**
+         * Renders the manual overrides field.
+         */
+        public function manual_overrides_field_callback(): void
+        {
+            $manual_overrides = get_option('asl_manual_overrides', []);
+            $plugins          = $this->get_all_plugins();
+            ?>
+            <input
+                    type="text"
+                    class="asl-plugin-search"
+                    placeholder="<?php esc_attr_e('Search Plugins...', 'add-settings-links'); ?>"
+            />
+            <table class="widefat fixed asl-settings-table" cellspacing="0">
+                <thead>
+                <tr>
+                    <th>
+                        <?php esc_html_e('Plugin', 'add-settings-links'); ?>
+                        <!-- Optional Tooltip -->
+                        <span class="asl-tooltip" title="<?php esc_attr_e('Name of the installed plugin.', 'add-settings-links'); ?>">&#9432;</span>
+                    </th>
+                    <th>
+                        <?php esc_html_e('Manual Settings URLs (comma-separated)', 'add-settings-links'); ?>
+                        <!-- Optional Tooltip -->
+                        <span class="asl-tooltip" title="<?php esc_attr_e('Enter one or multiple settings URLs separated by commas.', 'add-settings-links'); ?>">&#9432;</span>
+                    </th>
+                </tr>
+                </thead>
+                <tbody id="asl-plugins-table-body">
+                <?php foreach ($plugins as $plugin_file => $plugin_data) :
+                    $plugin_file_safe = sanitize_text_field($plugin_file);
+                    $existing = isset($manual_overrides[$plugin_file_safe])
+                        ? (array)$manual_overrides[$plugin_file_safe]
+                        : [];
+                    $existing_str = implode(',', $existing);
+                    ?>
+                    <tr class="asl-plugin-row">
+                        <td data-label="<?php esc_attr_e('Plugin', 'add-settings-links'); ?>">
+                            <?php echo esc_html($plugin_data['Name']); ?>
+                        </td>
+                        <td data-label="<?php esc_attr_e('Manual Settings URLs (comma-separated)', 'add-settings-links'); ?>">
+                            <input
+                                    type="text"
+                                    name="asl_manual_overrides[<?php echo esc_attr($plugin_file_safe); ?>]"
+                                    value="<?php echo esc_attr($existing_str); ?>"
+                                    class="asl-settings-input full-width-input"
+                                    data-plugin="<?php echo esc_attr($plugin_file_safe); ?>"
+                                    aria-describedby="asl_manual_overrides_description_<?php echo esc_attr($plugin_file_safe); ?>"
+                            />
+                            <p
+                                    class="description"
+                                    id="asl_manual_overrides_description_<?php echo esc_attr($plugin_file_safe); ?>"
+                            >
+                                <?php esc_html_e(
+                                    'Enter one or multiple settings URLs separated by commas.',
+                                    'add-settings-links'
+                                ); ?>
+                            </p>
+                            <span class="asl-error-message"></span>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php
+        }
+
+        /**
+         * Sanitizes manual overrides input.
+         *
+         * @param array $input Raw input from the settings form.
+         * @return array       Sanitized array of manual overrides.
+         */
         public function sanitize_manual_overrides($input): array
         {
             if (!is_array($input)) {
@@ -1341,7 +1099,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
          */
         private function get_all_plugins(): array
         {
-            $transient_key = $this->get_transient_key(\ASL_CACHED_PLUGINS_TRANSIENT);
+            $transient_key = $this->get_transient_key(ASL_CACHED_PLUGINS_TRANSIENT);
             $cached_plugins = get_transient($transient_key);
             if (false === $cached_plugins) {
                 if (!\function_exists('get_plugins')) {
@@ -1369,7 +1127,7 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                     }
                 }
 
-                set_transient($transient_key, $cached_plugins, \ASL_CACHED_PLUGINS_TRANSIENT_EXPIRATION);
+                set_transient($transient_key, $cached_plugins, ASL_CACHED_PLUGINS_TRANSIENT_EXPIRATION);
                 $this->log_debug('Installed plugins list was just cached.');
             } else {
                 $this->log_debug('Installed plugins list retrieved from cache.');
@@ -1460,6 +1218,45 @@ if (!class_exists(__NAMESPACE__ . '\\ASL_AddSettingsLinks')) {
                 return $base_key . '_site_' . get_current_blog_id();
             }
             return $base_key;
+        }
+
+        /**
+         * Finds settings URLs by scanning the cached admin menu slugs.
+         *
+         * @param string $plugin_dir      Plugin directory name.
+         * @param string $plugin_basename Plugin basename.
+         * @return string[]               Array of discovered admin URLs.
+         */
+        private function find_settings_in_admin_menu(string $plugin_dir, string $plugin_basename): array
+        {
+            $found_urls = [];
+            $transient_key = $this->get_transient_key(ASL_MENU_SLUGS_TRANSIENT);
+            $cached_slugs = get_transient($transient_key);
+            if (!is_array($cached_slugs)) {
+                $cached_slugs = [];
+            }
+            // If empty, try caching now
+            if (empty($cached_slugs) || !is_array($cached_slugs)) {
+                $this->cache_admin_menu_slugs();
+                $cached_slugs = get_transient($transient_key);
+            }
+            if (empty($cached_slugs) || !is_array($cached_slugs)) {
+                $this->log_debug('Cannot find potential settings slugs. Cache is empty or invalid (in find_settings_in_admin_menu).');
+                return $found_urls;
+            }
+
+            // Generate potential slugs from the plugin’s folder + file naming
+            $potential_slugs = $this->generate_potential_slugs($plugin_dir, $plugin_basename);
+
+            // Compare against cached admin menu slugs
+            foreach ($cached_slugs as $item) {
+                if (isset($item['slug'], $item['url']) && in_array($item['slug'], $potential_slugs, true)) {
+                    $this->log_debug("Found potential admin menu URL for plugin '$plugin_basename': " . $item['url']);
+                    $found_urls[] = $item['url'];
+                }
+            }
+
+            return array_unique($found_urls);
         }
     }
 
