@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Plugin Name: Add Settings Links
  * Description: Adds direct links to the settings pages for all plugins that do not have one (including multisite/network admin support).
