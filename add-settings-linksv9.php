@@ -6,22 +6,13 @@
  * Author: Jazir5
  * Text Domain: add-settings-links
  * Domain Path: /languages
+ * Requires PHP: 7.4
  */
 
 namespace ASL;
 
 if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
-}
-
-// PHP Version Check
-if (version_compare(PHP_VERSION, '7.4', '<')) {
-    add_action('admin_notices', function(): void {
-        echo '<div class="notice notice-error"><p>';
-        esc_html_e('Add Settings Links requires PHP version 7.4 or higher. Please update your PHP version.', 'add-settings-links');
-        echo '</p></div>';
-    });
-    return;
 }
 
 /**
