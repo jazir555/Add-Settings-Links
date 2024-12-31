@@ -1,0 +1,17 @@
+{
+    "name": "jazir555/add-settings-links",
+    "repositories": {
+        "outlandish/wpackagist": {
+            "type": "composer",
+            "url": "https://wpackagist.org"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "composer/installers": true
+        }
+    },
+    "require-dev": {
+        "wpackagist-plugin/debloat": "^1.2"
+    }
+}

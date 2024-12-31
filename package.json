@@ -1,0 +1,12 @@
+{
+  "name": "add-settings-links",
+  "version": "1.0.0",
+  "description": "Adds direct links to the settings pages for all plugins that do not have one (including multisite/network admin support).",
+  "scripts": {},
+  "keywords": [],
+  "author": "Jazir5",
+  "license": "GPL-3.0-only",
+  "devDependencies": {
+    "@wordpress/env": "^10.14.0"
+  }
+}
