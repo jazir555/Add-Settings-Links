@@ -1,0 +1,12 @@
+/.*
+/CONTRIBUTING.md
+/README.md
+/composer.json
+/composer.lock
+/dist-archive
+/node_modules
+/package-lock.json
+/package.json
+/phpcs.xml
+/vendor
+/wp-content
