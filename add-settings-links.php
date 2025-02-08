@@ -333,9 +333,19 @@ trait ASL_EnhancedSettingsDetection
                 continue;
             }
 
-            // WP 5.7+ organizes callbacks differently
-            foreach ($wp_filter[$hook] as $priority => $callbacks) {
-                foreach ($callbacks as $callback) {
+            $hook_callbacks = $wp_filter[$hook];
+            $callbacks = [];
+
+            // Handle WP_Hook instance (WordPress 4.7+)
+            if ($hook_callbacks instanceof \WP_Hook) {
+                $callbacks = $hook_callbacks->callbacks;
+            } else {
+                // Pre-WordPress 4.7 structure (array of priorities)
+                $callbacks = $hook_callbacks;
+            }
+
+            foreach ($callbacks as $priority => $callbacks_at_priority) {
+                foreach ($callbacks_at_priority as $callback) {
                     if (is_array($callback['function'])) {
                         $classOrObject = $callback['function'][0];
                         $method        = $callback['function'][1];
